@@ -23,7 +23,7 @@ import {
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
-import { useOSSessionStore, type OSSessionMessage } from '@/store/osSessionStore'
+import { useOSSessionStore, type OSSessionMessage, type LiveToolCall } from '@/store/osSessionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment } from '@/api/osSession'
 import { getGmailStats } from '@/api/gmail'
 import { getFinanceSummary } from '@/api/finance'
@@ -549,10 +549,109 @@ const STREAM_DOTS = [
   { color: '#D97706', delay: 0.3 },
 ] as const
 
-function StreamingIndicator({ text }: { text: string }) {
+/** Friendly tool name — strip mcp__ prefix and server name for readability */
+function friendlyToolName(raw: string) {
+  // mcp__neo4j__graph_query → graph_query
+  // mcp__supabase_supabase__query → query
+  const parts = raw.replace(/^mcp__/, '').split('__')
+  return parts.length > 1 ? parts[parts.length - 1] : parts[0]
+}
+
+/** Live tool activity feed — shows what the OS is doing right now */
+function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
+  // Tick every second to update elapsed timers on active tools
+  const [, setTick] = useState(0)
+  const hasActive = tools.some(t => !t.completedAt)
+  useEffect(() => {
+    if (!hasActive) return
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [hasActive])
+
+  if (tools.length === 0) return null
+
+  // Show the last 4 tools (most recent at bottom)
+  const visible = tools.slice(-4)
+
+  return (
+    <div className="space-y-1">
+      {visible.map((t) => {
+        const accent = getToolAccent(t.name)
+        const isActive = !t.completedAt
+        const elapsed = isActive
+          ? Math.round((Date.now() - t.startedAt) / 1000)
+          : Math.round(((t.completedAt || t.startedAt) - t.startedAt) / 1000)
+
+        return (
+          <motion.div
+            key={t.id}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: isActive ? 1 : 0.45, x: 0 }}
+            transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+            className="flex items-center gap-2"
+          >
+            {/* Pulse dot — animated while active, static when done */}
+            {isActive ? (
+              <motion.div
+                className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: accent.color, boxShadow: `0 0 6px ${accent.color}60` }}
+                animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            ) : (
+              <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent.color, opacity: 0.3 }} />
+            )}
+            <span className="text-[11px] font-mono tracking-wide" style={{ color: isActive ? `${accent.color}cc` : `${accent.color}66` }}>
+              {friendlyToolName(t.name)}
+            </span>
+            <span className="text-[10px] font-mono text-on-surface-muted/20">
+              {elapsed}s
+            </span>
+          </motion.div>
+        )
+      })}
+      {tools.length > 4 && (
+        <span className="text-[10px] font-mono text-on-surface-muted/20 pl-3.5">
+          +{tools.length - 4} earlier
+        </span>
+      )}
+    </div>
+  )
+}
+
+function StreamingIndicator({ text, tools, thinking }: { text: string; tools: LiveToolCall[]; thinking: string }) {
+  const activeTools = tools.filter(t => !t.completedAt)
+
+  // Determine status label
+  let statusLabel = 'thinking'
+  if (activeTools.length > 0) statusLabel = `using ${friendlyToolName(activeTools[activeTools.length - 1].name)}`
+  else if (text) statusLabel = 'working'
+  else if (thinking) statusLabel = 'reasoning'
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-3 space-y-3">
+      {/* Thinking preview — show first/last line of thinking if no text yet */}
+      {thinking && !text && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex items-start gap-2 px-3 py-2 rounded-xl"
+          style={{ background: 'rgba(27,122,61,0.03)', border: '1px solid rgba(27,122,61,0.06)' }}
+        >
+          <Brain className="h-3 w-3 mt-0.5 flex-shrink-0" style={{ color: '#2ECC71' }} strokeWidth={1.75} />
+          <span className="text-[11px] text-on-surface-muted/40 leading-relaxed line-clamp-2 font-mono">
+            {thinking.length > 200 ? '...' + thinking.slice(-200) : thinking}
+          </span>
+        </motion.div>
+      )}
+
+      {/* Live tool activity feed */}
+      <LiveToolFeed tools={tools} />
+
+      {/* Streaming text */}
       <StreamMarkdown text={text} />
+
+      {/* Status bar */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
           {STREAM_DOTS.map((dot, i) => (
@@ -566,8 +665,13 @@ function StreamingIndicator({ text }: { text: string }) {
           ))}
         </div>
         <span className="text-[11px] text-on-surface-muted/30 font-mono tracking-wider">
-          {text ? 'working' : 'thinking'}
+          {statusLabel}
         </span>
+        {tools.length > 0 && (
+          <span className="text-[10px] text-on-surface-muted/15 font-mono ml-auto">
+            {tools.filter(t => t.completedAt).length}/{tools.length} tools
+          </span>
+        )}
       </div>
     </motion.div>
   )
@@ -592,6 +696,8 @@ export default function CCStream() {
   const allMessages = useOSSessionStore(s => s.messages)
   const status = useOSSessionStore(s => s.status)
   const streamText = useOSSessionStore(s => s.streamText)
+  const streamTools = useOSSessionStore(s => s.streamTools)
+  const streamThinking = useOSSessionStore(s => s.streamThinking)
   const addUserMessage = useOSSessionStore(s => s.addUserMessage)
 
   // Only render the most recent `visibleCount` messages
@@ -937,7 +1043,7 @@ export default function CCStream() {
             </div>
           )}
 
-          {status === 'streaming' && <StreamingIndicator text={streamText} />}
+          {status === 'streaming' && <StreamingIndicator text={streamText} tools={streamTools} thinking={streamThinking} />}
           <div ref={chatEndRef} />
         </div>
       </div>
