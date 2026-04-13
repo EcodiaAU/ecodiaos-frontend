@@ -6,8 +6,8 @@ import api from './client'
  */
 
 export async function sendOSMessage(message: string) {
-  const { data } = await api.post('/os-session/message', { message }, { timeout: 0 })
-  return data as { sessionId: string; ccCliSessionId: string | null; code: number; text: string }
+  const { data } = await api.post('/os-session/message', { message })
+  return data as { accepted: boolean; status: string }
 }
 
 export async function getOSStatus() {

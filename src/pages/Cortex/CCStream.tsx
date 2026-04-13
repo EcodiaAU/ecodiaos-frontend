@@ -785,30 +785,28 @@ export default function CCStream() {
     fullMessage = fullMessage.trim() || `[Attached ${currentAttachments.map(a => a.name).join(', ')}]`
 
     addUserMessage(fullMessage)
-    try {
-      const result = await sendOSMessage(fullMessage)
+
+    // Fire-and-forget: the backend returns { accepted: true } immediately.
+    // The real response streams via WebSocket (text_delta, tool_use,
+    // os-session:complete events). We only care about HTTP errors here
+    // (network down, 400 validation, 500 server crash on accept).
+    sendOSMessage(fullMessage).catch(() => {
+      // HTTP POST itself failed — server unreachable or rejected the message.
+      // This is different from a long-running session timing out.
       const store = useOSSessionStore.getState()
-      if (store.status === 'streaming') {
-        // WebSocket didn't deliver os-session:complete — use HTTP response as fallback
-        // Only inject text if WebSocket didn't already stream it via deltas
-        if (result.text && !store.streamText) {
-          store.appendStreamText(result.text)
-        }
+      if (store.status === 'streaming' && !store.streamText) {
         store.finalizeResponse()
+        store.setStatus('error')
+        useOSSessionStore.setState(s => ({
+          messages: [...s.messages, {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: 'Could not reach the server. Check your connection.',
+            timestamp: new Date(),
+          }],
+        }))
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      useOSSessionStore.getState().finalizeResponse()
-      useOSSessionStore.getState().setStatus('error')
-      useOSSessionStore.setState(state => ({
-        messages: [...state.messages, {
-          id: crypto.randomUUID(),
-          role: 'assistant' as const,
-          content: `Connection error: ${msg}`,
-          timestamp: new Date(),
-        }],
-      }))
-    }
+    })
   }, [input, addUserMessage])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
