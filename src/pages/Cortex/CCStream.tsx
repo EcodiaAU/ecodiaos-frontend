@@ -10,7 +10,7 @@
  *
  * The system speaks. You observe. Occasionally you approve.
  */
-import { useState, useRef, useEffect, useCallback, useMemo, useId } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, useId, memo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -503,21 +503,59 @@ function ThinkingBlock({ content }: { content: string }) {
 
 // ─── Streaming indicator — green + gold breathing ───────────────────
 
+/**
+ * Throttled streaming markdown — renders markdown at ~5fps (every 200ms)
+ * instead of on every rAF flush (~30fps). This is the single biggest
+ * performance win: ReactMarkdown parsing + remark-gfm is expensive and
+ * the visual difference between 5fps and 30fps markdown rendering is
+ * imperceptible during streaming (the text is growing, not reflowing).
+ */
+const StreamMarkdown = memo(function StreamMarkdown({ text }: { text: string }) {
+  const [rendered, setRendered] = useState('')
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestText = useRef(text)
+  latestText.current = text
+
+  useEffect(() => {
+    // Immediately render if this is the first text
+    if (!rendered && text) { setRendered(text); return }
+
+    // Throttle subsequent updates to 200ms
+    if (!timerRef.current) {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null
+        setRendered(latestText.current)
+      }, 200)
+    }
+    return () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    }
+  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On unmount or when text becomes empty, flush
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
+  if (!rendered) return null
+  return (
+    <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{rendered}</ReactMarkdown>
+    </div>
+  )
+})
+
+const STREAM_DOTS = [
+  { color: '#1B7A3D', delay: 0 },
+  { color: '#2ECC71', delay: 0.15 },
+  { color: '#D97706', delay: 0.3 },
+] as const
+
 function StreamingIndicator({ text }: { text: string }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-3 space-y-3">
-      {text && (
-        <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
-        </div>
-      )}
+      <StreamMarkdown text={text} />
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
-          {[
-            { color: '#1B7A3D', delay: 0 },
-            { color: '#2ECC71', delay: 0.15 },
-            { color: '#D97706', delay: 0.3 },
-          ].map((dot, i) => (
+          {STREAM_DOTS.map((dot, i) => (
             <motion.div
               key={i}
               className="h-1.5 w-1.5 rounded-full"
@@ -590,12 +628,34 @@ export default function CCStream() {
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Auto-scroll only when user is near the bottom (or on new messages/status change)
+  // Auto-scroll on new messages or status changes — NOT on every streamText delta.
+  // For streaming text, we use a separate throttled scroll below.
   useEffect(() => {
     if (!userScrolledUp.current) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, status, streamText])
+  }, [messages, status])
+
+  // Throttled auto-scroll during streaming — keeps up with text without
+  // queuing dozens of smooth-scroll animations per second.
+  const streamScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    if (status === 'streaming') {
+      streamScrollTimer.current = setInterval(() => {
+        if (!userScrolledUp.current) {
+          chatEndRef.current?.scrollIntoView({ behavior: 'instant' })
+        }
+      }, 250) // 4x/sec is plenty smooth for following text
+    } else {
+      if (streamScrollTimer.current) {
+        clearInterval(streamScrollTimer.current)
+        streamScrollTimer.current = null
+      }
+    }
+    return () => {
+      if (streamScrollTimer.current) clearInterval(streamScrollTimer.current)
+    }
+  }, [status])
 
   // Always scroll down when the user sends a new message
   const prevMessageCount = useRef(messages.length)

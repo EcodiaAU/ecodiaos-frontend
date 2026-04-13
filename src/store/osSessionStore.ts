@@ -5,8 +5,9 @@ import { persist } from 'zustand/middleware'
  * OS Session Store — state for the persistent CC OS session.
  * Manages the conversation stream, streaming state, and raw NDJSON chunks.
  *
- * Persistence: messages, sessionId, streamChunks, streamText, lastUserMessageAt
- * all survive tab close so we can recover mid-turn responses.
+ * Persistence: messages, sessionId, lastUserMessageAt survive tab close.
+ * streamText and streamChunks are NOT persisted — they thrash localStorage
+ * on every token delta, killing streaming performance.
  */
 
 export interface OSSessionMessage {
@@ -106,6 +107,40 @@ function trimMessages(msgs: OSSessionMessage[]): OSSessionMessage[] {
   return msgs.length > MAX_MESSAGES ? msgs.slice(-MAX_MESSAGES) : msgs
 }
 
+/**
+ * Batched stream text accumulator.
+ * Instead of calling set() on every single text_delta (which triggers a React
+ * re-render + localStorage write per token), we accumulate deltas in a plain
+ * string buffer and flush to Zustand state at ~30fps using requestAnimationFrame.
+ * This reduces re-renders from ~50/s (one per token) to ~30/s (one per frame).
+ */
+let _streamTextBuffer = ''
+let _streamChunkBuffer: string[] = []
+let _streamThinkingBuffer = ''
+let _flushScheduled = false
+
+function scheduleFlush() {
+  if (_flushScheduled) return
+  _flushScheduled = true
+  requestAnimationFrame(() => {
+    _flushScheduled = false
+    const textToAdd = _streamTextBuffer
+    const chunksToAdd = _streamChunkBuffer
+    const thinkingToAdd = _streamThinkingBuffer
+    _streamTextBuffer = ''
+    _streamChunkBuffer = []
+    _streamThinkingBuffer = ''
+
+    if (!textToAdd && chunksToAdd.length === 0 && !thinkingToAdd) return
+
+    useOSSessionStore.setState(state => ({
+      ...(textToAdd ? { streamText: state.streamText + textToAdd } : {}),
+      ...(chunksToAdd.length > 0 ? { streamChunks: [...state.streamChunks, ...chunksToAdd] } : {}),
+      ...(thinkingToAdd ? { streamThinking: state.streamThinking + thinkingToAdd } : {}),
+    }))
+  })
+}
+
 export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => ({
   status: 'idle',
   messages: [],
@@ -162,15 +197,13 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   appendStreamChunk: (chunk) => {
-    set(state => ({
-      streamChunks: [...state.streamChunks, chunk],
-    }))
+    _streamChunkBuffer.push(chunk)
+    scheduleFlush()
   },
 
   appendStreamText: (text) => {
-    set(state => ({
-      streamText: state.streamText + text,
-    }))
+    _streamTextBuffer += text
+    scheduleFlush()
   },
 
   replaceStreamText: (text) => {
@@ -196,10 +229,25 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   appendStreamThinking: (text) => {
-    set(state => ({ streamThinking: state.streamThinking + text }))
+    _streamThinkingBuffer += text
+    scheduleFlush()
   },
 
   finalizeResponse: () => {
+    // Flush any buffered deltas immediately before finalizing
+    if (_streamTextBuffer || _streamChunkBuffer.length > 0 || _streamThinkingBuffer) {
+      const s = get()
+      set({
+        streamText: s.streamText + _streamTextBuffer,
+        streamChunks: _streamChunkBuffer.length > 0 ? [...s.streamChunks, ..._streamChunkBuffer] : s.streamChunks,
+        streamThinking: s.streamThinking + _streamThinkingBuffer,
+      })
+      _streamTextBuffer = ''
+      _streamChunkBuffer = []
+      _streamThinkingBuffer = ''
+      _flushScheduled = false
+    }
+
     const { streamChunks, streamText, streamTools, streamThinking } = get()
     // Only add a message if we have content
     if (streamChunks.length === 0 && !streamText && streamTools.length === 0 && !streamThinking) {
@@ -268,8 +316,6 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   partialize: (state) => ({
     messages: state.messages,
     sessionId: state.sessionId,
-    streamChunks: state.streamChunks,
-    streamText: state.streamText,
     lastUserMessageAt: state.lastUserMessageAt,
   }),
 },
