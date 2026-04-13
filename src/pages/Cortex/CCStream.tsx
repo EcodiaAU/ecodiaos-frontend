@@ -657,6 +657,26 @@ export default function CCStream() {
     }
   }, [status])
 
+  // Safety net: poll backend status while streaming. If the WS `os-session:complete`
+  // event is missed (connection blip, race condition), the frontend would stay stuck
+  // in "streaming" forever. This catches that case by checking every 5s.
+  useEffect(() => {
+    if (status !== 'streaming') return
+    const poll = setInterval(async () => {
+      try {
+        const backendStatus = await getOSStatus()
+        if (!backendStatus.active) {
+          // Backend finished but we didn't get the WS complete event
+          const store = useOSSessionStore.getState()
+          if (store.status === 'streaming') {
+            store.finalizeResponse()
+          }
+        }
+      } catch { /* network error — don't finalize, keep waiting */ }
+    }, 5000)
+    return () => clearInterval(poll)
+  }, [status])
+
   // Always scroll down when the user sends a new message
   const prevMessageCount = useRef(messages.length)
   useEffect(() => {
