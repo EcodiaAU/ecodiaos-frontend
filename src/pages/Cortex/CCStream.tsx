@@ -17,14 +17,14 @@ import {
   RotateCcw, Brain, ChevronDown,
   Mail, DollarSign, Zap, Activity,
   GitBranch, TrendingUp, Download,
-  Paperclip, FileText, X, Trash2, Image as ImageIcon,
+  Paperclip, FileText, X, Trash2, Image as ImageIcon, Square,
 } from 'lucide-react'
 // SpatialLayer removed from input area to fix jitter
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
 import { useOSSessionStore, type OSSessionMessage, type LiveToolCall } from '@/store/osSessionStore'
-import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment } from '@/api/osSession'
+import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
 import { getGmailStats } from '@/api/gmail'
 import { getFinanceSummary } from '@/api/finance'
 import { getActionStats } from '@/api/actions'
@@ -950,6 +950,17 @@ export default function CCStream() {
     })
   }, [])
 
+  const handleAbort = useCallback(async () => {
+    try {
+      await abortOS()
+    } catch {}
+    // Force frontend to complete even if backend call fails
+    const store = useOSSessionStore.getState()
+    if (store.status === 'streaming') {
+      store.finalizeResponse()
+    }
+  }, [])
+
   const handleRestart = useCallback(async () => {
     await restartOS()
     useOSSessionStore.getState().clearMessages()
@@ -1126,15 +1137,35 @@ export default function CCStream() {
             />
 
             <div className="flex items-center gap-1">
-              {messages.length > 0 && (
-                <button
-                  onClick={handleRestart}
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center text-black hover:opacity-60 transition-opacity"
-                  title="New session"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
-                </button>
-              )}
+              <AnimatePresence mode="wait">
+                {status === 'streaming' ? (
+                  <motion.button
+                    key="stop"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                    onClick={handleAbort}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-black text-white hover:bg-black/70 transition-colors"
+                    title="Stop"
+                  >
+                    <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />
+                  </motion.button>
+                ) : messages.length > 0 ? (
+                  <motion.button
+                    key="restart"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                    onClick={handleRestart}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center text-black hover:opacity-60 transition-opacity"
+                    title="New session"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
             </div>
           </div>
         </div>

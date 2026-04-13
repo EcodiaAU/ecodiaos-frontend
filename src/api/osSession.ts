@@ -89,6 +89,12 @@ export async function recoverResponse(since?: string) {
   }
 }
 
+/** Abort the active OS session query immediately */
+export async function abortOS() {
+  const { data } = await api.post('/os-session/abort')
+  return data as { aborted: boolean; reason?: string }
+}
+
 /** Manually trigger a handover (generates brief + warms new session) */
 export async function triggerHandover() {
   const { data } = await api.post('/os-session/handover', {}, { timeout: 0 })
