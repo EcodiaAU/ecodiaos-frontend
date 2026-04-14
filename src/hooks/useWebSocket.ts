@@ -29,21 +29,40 @@ export function useWebSocket() {
     let attempt = 0
     let mounted = true
     let hasConnectedBefore = false
+    let reconnectScheduled = false  // dedupe: onerror+onclose both fire on a failed socket
 
     async function connect() {
       if (!mounted) return
+
+      // If we already have a live socket from a previous connect() call, close it
+      // before opening another. Without this, reconnect storms can spawn multiple
+      // concurrent sockets, each handling every server message — producing the
+      // 3x duplicated stream output the user reported.
+      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        try { wsRef.current.close() } catch { /* noop */ }
+        wsRef.current = null
+      }
+
       setConnectionState('connecting')
 
       try {
         const { data } = await api.post('/auth/ws-ticket')
         const wsBase = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
         const ws = new WebSocket(`${wsBase}/ws?ticket=${data.ticket}`)
+        // Claim ownership immediately so a fast-firing onerror during the same
+        // tick can't race a second connect() into existence.
+        wsRef.current = ws
 
         ws.onopen = () => {
+          // Ignore onopen for a socket we no longer own (e.g. effect cleanup
+          // or a newer connect() superseded this one mid-handshake).
+          if (wsRef.current !== ws) {
+            try { ws.close() } catch { /* noop */ }
+            return
+          }
           const isReconnect = hasConnectedBefore
           attempt = 0
           hasConnectedBefore = true
-          wsRef.current = ws
           setConnectionState('connected')
 
           // On WS reconnect, check if we missed an OS session response
@@ -79,6 +98,10 @@ export function useWebSocket() {
         }
 
         ws.onmessage = (event) => {
+          // Only the actively-owned socket may dispatch events. Without this,
+          // a leaked previous socket can keep firing onmessage and double/triple
+          // the output the user sees during streaming.
+          if (wsRef.current !== ws) return
           const msg = JSON.parse(event.data)
           const cortex = useCortexStore.getState()
 
@@ -201,18 +224,20 @@ export function useWebSocket() {
               else if (chunk.type === 'thinking' && chunk.content) {
                 osStore.appendStreamThinking(chunk.content)
               }
-              // text_delta: real-time streaming from Agent SDK partial messages
+              // text_delta: real-time streaming from Agent SDK partial messages.
+              // Goes only into streamText (the rendered buffer). streamChunks is
+              // for raw NDJSON archival — appending deltas there too made the
+              // saved message content double-up after finalize.
               else if (chunk.type === 'text_delta' && chunk.content) {
-                osStore.appendStreamChunk(chunk.content)
                 osStore.appendStreamText(chunk.content)
               }
-              // assistant_text: complete text from an assistant turn
-              // In agentic loops there are multiple turns; each appends.
-              // If we already have delta text, the deltas already covered this text,
-              // so skip to avoid duplication. If no deltas arrived (e.g. recovery),
-              // use this as the authoritative source.
+              // assistant_text: complete text from an assistant turn. In agentic
+              // loops the text_delta stream already produced this same content
+              // as it arrived, so re-appending it here would render the message
+              // twice. Skip — deltas are authoritative for the live view, and
+              // recovery uses a separate path (injectRecoveredResponse).
               else if (chunk.type === 'assistant_text' && chunk.content) {
-                osStore.appendStreamChunk(chunk.content)
+                // intentional no-op — deltas already covered this text
               }
               // tool_use: agent is using a tool — track each tool live
               else if (chunk.type === 'tool_use' && chunk.tools) {
@@ -330,18 +355,18 @@ export function useWebSocket() {
           }
         }
 
-        ws.onclose = () => {
+        // onerror always precedes onclose; both used to fire reconnect()
+        // independently, doubling the reconnect storm. Route both through one
+        // guarded path.
+        const handleDrop = () => {
+          if (wsRef.current === ws) wsRef.current = null
           if (mounted) {
             setConnectionState('disconnected')
             reconnect()
           }
         }
-        ws.onerror = () => {
-          if (mounted) {
-            setConnectionState('disconnected')
-            reconnect()
-          }
-        }
+        ws.onclose = handleDrop
+        ws.onerror = handleDrop
       } catch {
         if (mounted) {
           setConnectionState('disconnected')
@@ -351,18 +376,28 @@ export function useWebSocket() {
     }
 
     function reconnect() {
-      if (!mounted) return
+      if (!mounted || reconnectScheduled) return
+      reconnectScheduled = true
       const delay = Math.min(1000 * 2 ** attempt, 30_000)
       attempt++
-      setTimeout(connect, delay)
+      setTimeout(() => {
+        reconnectScheduled = false
+        connect()
+      }, delay)
     }
 
     connect()
 
     return () => {
       mounted = false
-      wsRef.current?.close()
+      try { wsRef.current?.close() } catch { /* noop */ }
+      wsRef.current = null
       setConnectionState('disconnected')
     }
-  }, [token, addNotification, updateWorker, queryClient])
+    // Intentionally only re-run on token change. addNotification/updateWorker/
+    // queryClient are stable references from their stores/providers — including
+    // them risked re-running this effect (and spawning a parallel socket) every
+    // render in cases where a parent re-mount briefly broke that stability.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 }
