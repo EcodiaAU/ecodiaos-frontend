@@ -23,6 +23,7 @@ import {
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
+import { MessageErrorBoundary } from '@/components/shared/MessageErrorBoundary'
 import { useOSSessionStore, type OSSessionMessage, type LiveToolCall } from '@/store/osSessionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
 import { getGmailStats } from '@/api/gmail'
@@ -466,11 +467,15 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
         </div>
       )}
 
-      {/* Response text — futuristic markdown rendering */}
+      {/* Response text — futuristic markdown rendering. Wrapped in a local
+          ErrorBoundary so one bad message (malformed code fence, huge blob,
+          pathological table) can't crash the whole Cortex route. */}
       {displayText && (
-        <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{displayText}</ReactMarkdown>
-        </div>
+        <MessageErrorBoundary fallbackText={displayText}>
+          <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{displayText}</ReactMarkdown>
+          </div>
+        </MessageErrorBoundary>
       )}
     </motion.div>
   )
@@ -537,9 +542,11 @@ const StreamMarkdown = memo(function StreamMarkdown({ text }: { text: string }) 
 
   if (!rendered) return null
   return (
-    <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{rendered}</ReactMarkdown>
-    </div>
+    <MessageErrorBoundary fallbackText={rendered}>
+      <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{rendered}</ReactMarkdown>
+      </div>
+    </MessageErrorBoundary>
   )
 })
 
@@ -766,9 +773,23 @@ export default function CCStream() {
   // Safety net: poll backend status while streaming. If the WS `os-session:complete`
   // event is missed (connection blip, race condition), the frontend would stay stuck
   // in "streaming" forever. This catches that case by checking every 5s.
+  //
+  // Also: hard wall-clock timeout (15 min). Even if the backend is genuinely
+  // thinking, the user should never see "thinking..." for longer than this —
+  // finalize whatever we have and let them retry rather than spinner-forever.
   useEffect(() => {
     if (status !== 'streaming') return
+    const STREAM_HARD_TIMEOUT_MS = 15 * 60 * 1000
+    const streamStart = Date.now()
     const poll = setInterval(async () => {
+      // Hard wall-clock gate first — no network call needed to enforce this.
+      if (Date.now() - streamStart > STREAM_HARD_TIMEOUT_MS) {
+        const store = useOSSessionStore.getState()
+        if (store.status === 'streaming') {
+          store.finalizeResponse()
+        }
+        return
+      }
       try {
         const backendStatus = await getOSStatus()
         if (!backendStatus.active) {
