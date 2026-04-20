@@ -626,6 +626,49 @@ function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
   )
 }
 
+/**
+ * HandoverIndicator — subtle visible signal when the OS's context is
+ * being reset (auto-handover at token threshold, or whatever else pushes
+ * through a 'handover' state). Without this the session silently loses
+ * continuity and Tate notices only because the OS suddenly has no idea
+ * what it was doing.
+ */
+function HandoverIndicator({ handover }: { handover: ReturnType<typeof useOSSessionStore.getState>['handover'] }) {
+  if (!handover) return null
+  const label = handover.phase === 'preparing' ? 'Writing handover brief…'
+              : handover.phase === 'warming'   ? 'Warming fresh session with brief…'
+              : handover.phase === 'complete'  ? 'Context refreshed — continuing'
+              : handover.phase === 'failed'    ? `Handover failed: ${handover.error || 'unknown'}`
+              : handover.phase === 'cancelled' ? `Handover cancelled: ${handover.error || 'too_short'}`
+              : null
+  if (!label) return null
+  const accent = handover.phase === 'failed' ? '#D97706' : '#1B7A3D'
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 4 }}
+        transition={{ type: 'spring', stiffness: 140, damping: 22 }}
+        className="flex items-center gap-2 py-2 px-3 rounded-xl text-[11px] font-mono tracking-wide"
+        style={{
+          background: `linear-gradient(135deg, ${accent}0a, ${accent}04)`,
+          border: `1px solid ${accent}20`,
+          color: `${accent}dd`,
+        }}
+      >
+        <motion.div
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ backgroundColor: accent, boxShadow: `0 0 6px ${accent}70` }}
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <span>{label}</span>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
 function StreamingIndicator({ text, tools, thinking }: { text: string; tools: LiveToolCall[]; thinking: string }) {
   const activeTools = tools.filter(t => !t.completedAt)
 
@@ -706,6 +749,7 @@ export default function CCStream() {
   const streamTools = useOSSessionStore(s => s.streamTools)
   const streamThinking = useOSSessionStore(s => s.streamThinking)
   const addUserMessage = useOSSessionStore(s => s.addUserMessage)
+  const handover = useOSSessionStore(s => s.handover)
 
   // Only render the most recent `visibleCount` messages
   const messages = useMemo(() => {
@@ -1076,6 +1120,7 @@ export default function CCStream() {
           )}
 
           {status === 'streaming' && <StreamingIndicator text={streamText} tools={streamTools} thinking={streamThinking} />}
+          <HandoverIndicator handover={handover} />
           <div ref={chatEndRef} />
         </div>
       </div>
