@@ -160,6 +160,39 @@ function scheduleFlush() {
   })
 }
 
+/**
+ * True current length of streamed text, accounting for the rAF-batched buffer
+ * that hasn't flushed to Zustand state yet. Callers that need to compare an
+ * incoming "full text" against what's already been received must use this —
+ * checking `store.streamText.length` alone will be up to 1 frame stale and
+ * miscount the gap.
+ */
+export function getEffectiveStreamTextLength(): number {
+  return useOSSessionStore.getState().streamText.length + _streamTextBuffer.length
+}
+
+/**
+ * Force-flush any pending rAF-buffered deltas into the store synchronously.
+ * Used when a terminal event (assistant complete, finalize) arrives before
+ * the next animation frame — without this, the last ~1 frame of deltas would
+ * be lost because the buffer is reset on `addUserMessage` / `finalizeResponse`.
+ */
+export function flushStreamBuffersSync(): void {
+  if (!_streamTextBuffer && _streamChunkBuffer.length === 0 && !_streamThinkingBuffer) return
+  const textToAdd = _streamTextBuffer
+  const chunksToAdd = _streamChunkBuffer
+  const thinkingToAdd = _streamThinkingBuffer
+  _streamTextBuffer = ''
+  _streamChunkBuffer = []
+  _streamThinkingBuffer = ''
+  _flushScheduled = false
+  useOSSessionStore.setState(state => ({
+    ...(textToAdd ? { streamText: state.streamText + textToAdd } : {}),
+    ...(chunksToAdd.length > 0 ? { streamChunks: [...state.streamChunks, ...chunksToAdd] } : {}),
+    ...(thinkingToAdd ? { streamThinking: state.streamThinking + thinkingToAdd } : {}),
+  }))
+}
+
 export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => ({
   status: 'idle',
   liveness: null,
@@ -185,10 +218,16 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
       // before adding the user message. This preserves tools/thinking on interrupt.
       const inFlightMessages: OSSessionMessage[] = []
       if (state.streamText || state.streamChunks.length > 0 || state.streamTools.length > 0) {
+        // When the user interrupts mid-turn, snapshot what we have. Falling back
+        // to "(processing...)" made the truncated assistant message look like it
+        // had frozen; describe what was actually captured instead.
+        const snapshotContent = state.streamText
+          || (state.streamTools.length > 0 ? `(interrupted mid-turn — ${state.streamTools.length} tool call${state.streamTools.length === 1 ? '' : 's'} in progress)` : '')
+          || (state.streamThinking ? '(interrupted mid-turn — thinking in progress)' : '(interrupted)')
         inFlightMessages.push({
           id: crypto.randomUUID(),
           role: 'assistant' as const,
-          content: state.streamText || '(processing...)',
+          content: snapshotContent,
           chunks: state.streamChunks,
           tools: state.streamTools.length > 0 ? state.streamTools : undefined,
           thinking: state.streamThinking || undefined,
@@ -256,6 +295,14 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   finalizeResponse: () => {
+    // Idempotent: if we're already complete/idle with nothing in flight, this
+    // is a duplicate event (WS complete + 5s poll both resolving, etc.) — no-op.
+    const pre = get()
+    if (pre.status !== 'streaming' &&
+        !_streamTextBuffer && _streamChunkBuffer.length === 0 && !_streamThinkingBuffer &&
+        !pre.streamText && pre.streamChunks.length === 0 && pre.streamTools.length === 0 && !pre.streamThinking) {
+      return
+    }
     // Flush any buffered deltas immediately before finalizing
     if (_streamTextBuffer || _streamChunkBuffer.length > 0 || _streamThinkingBuffer) {
       const s = get()
@@ -276,11 +323,18 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
       set({ status: 'complete', streamChunks: [], streamText: '', streamTools: [], streamThinking: '', lastUserMessageAt: null })
       return
     }
+    // Graceful fallback when text never arrived. "(processing...)" looked
+    // frozen and alarming — if the OS completed a turn with only tools/thinking
+    // and no text, say so directly so the user knows the turn actually ran.
+    const finalContent = streamText
+      || (streamTools.length > 0 ? `(turn completed with ${streamTools.length} tool call${streamTools.length === 1 ? '' : 's'}, no text response)` : '')
+      || (streamThinking ? '(turn completed with thinking only, no text response)' : '')
+      || ''
     set(state => ({
       messages: trimMessages([...state.messages, {
         id: crypto.randomUUID(),
         role: 'assistant' as const,
-        content: streamText || '(processing...)',
+        content: finalContent,
         chunks: streamChunks,
         tools: streamTools.length > 0 ? streamTools : undefined,
         thinking: streamThinking || undefined,

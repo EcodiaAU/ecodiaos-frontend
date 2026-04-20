@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useNotificationStore } from '@/store/notificationStore'
 import { useCortexStore } from '@/store/cortexStore'
 import { useWorkerStore } from '@/store/workerStore'
-import { useOSSessionStore } from '@/store/osSessionStore'
+import { useOSSessionStore, getEffectiveStreamTextLength, flushStreamBuffersSync } from '@/store/osSessionStore'
 import type { CCSession } from '@/types/claudeCode'
 import api from '@/api/client'
 
@@ -216,6 +216,16 @@ export function useWebSocket() {
               const chunk = msg.data
               if (!chunk) break
 
+              // Auto-promote to streaming on any inbound content. If we missed
+              // the initial 'status: streaming' event (brief WS blip between
+              // sendMessage and first delta), the UI would sit in 'idle' while
+              // text silently accumulated in the store — user sees nothing.
+              // Only promote from idle/error, not from complete (which would
+              // wrongly resurrect a finished turn).
+              if (osStore.status === 'idle' || osStore.status === 'error') {
+                osStore.setStatus('streaming')
+              }
+
               // thinking_delta: real-time streaming of extended thinking
               if (chunk.type === 'thinking_delta' && chunk.content) {
                 osStore.appendStreamThinking(chunk.content)
@@ -231,13 +241,30 @@ export function useWebSocket() {
               else if (chunk.type === 'text_delta' && chunk.content) {
                 osStore.appendStreamText(chunk.content)
               }
-              // assistant_text: complete text from an assistant turn. In agentic
-              // loops the text_delta stream already produced this same content
-              // as it arrived, so re-appending it here would render the message
-              // twice. Skip — deltas are authoritative for the live view, and
-              // recovery uses a separate path (injectRecoveredResponse).
+              // assistant_text: complete text from an assistant turn.
+              //
+              // Two cases to handle:
+              //   A) Normal streaming — text_delta fired continuously, streamText
+              //      already contains the full text by the time this arrives.
+              //      Appending here would double the message.
+              //   B) No-stream case — the SDK delivered the message as a single
+              //      `assistant` block without preceding content_block_delta
+              //      events. This happens with short responses, some Bedrock
+              //      paths, and certain model configurations. Without this
+              //      fallback, streamText stays empty and finalize shows the
+              //      ugly "(processing...)" placeholder despite the message
+              //      having fully arrived on the wire.
+              //
+              // Fix: if the incoming full text is longer than what we have
+              // (including the rAF-batched buffer that hasn't flushed yet),
+              // flush pending deltas then replace with the full text. This
+              // covers case B without double-rendering case A (equal lengths).
               else if (chunk.type === 'assistant_text' && chunk.content) {
-                // intentional no-op — deltas already covered this text
+                flushStreamBuffersSync()
+                const effectiveLen = getEffectiveStreamTextLength()
+                if (chunk.content.length > effectiveLen) {
+                  osStore.replaceStreamText(chunk.content)
+                }
               }
               // tool_use: agent is using a tool — track each tool live
               else if (chunk.type === 'tool_use' && chunk.tools) {
