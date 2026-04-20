@@ -45,8 +45,26 @@ export interface LiveToolCall {
   completedAt?: number
 }
 
+/**
+ * Liveness signal from the backend. Emitted every 5s while a turn is in-flight
+ * so the UI can show "still working — N seconds, running tool X" instead of a
+ * blank spinner that looks frozen during long tool runs or thinking pauses.
+ */
+export interface LivenessSignal {
+  phase: 'thinking' | 'tool'
+  elapsedSec: number
+  detail: {
+    name: string
+    runningSec: number
+    outstanding: number
+  } | null
+  receivedAt: number
+}
+
 interface OSSessionStore {
   status: 'idle' | 'streaming' | 'complete' | 'error'
+  /** Latest liveness tick from the backend. Null when idle or stale (>20s old). */
+  liveness: LivenessSignal | null
   messages: OSSessionMessage[]
   /** Chunks accumulating for the current assistant response */
   streamChunks: string[]
@@ -77,6 +95,7 @@ interface OSSessionStore {
 
   // Actions
   setStatus: (status: OSSessionStore['status']) => void
+  setLiveness: (signal: LivenessSignal | null) => void
   addUserMessage: (content: string) => void
   appendStreamChunk: (chunk: string) => void
   appendStreamText: (text: string) => void
@@ -143,6 +162,7 @@ function scheduleFlush() {
 
 export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => ({
   status: 'idle',
+  liveness: null,
   messages: [],
   streamChunks: [],
   streamText: '',
@@ -157,6 +177,7 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   handover: null,
 
   setStatus: (status) => set({ status }),
+  setLiveness: (signal) => set({ liveness: signal }),
 
   addUserMessage: (content) => {
     set(state => {
@@ -186,6 +207,7 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
           },
         ]),
         status: 'streaming' as const,
+        liveness: null,
         streamChunks: [],
         streamText: '',
         streamTools: [],
@@ -265,6 +287,7 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
         timestamp: new Date(),
       }]),
       status: 'complete',
+      liveness: null,
       streamChunks: [],
       streamText: '',
       streamTools: [],
@@ -293,6 +316,7 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
         timestamp: new Date(),
       }]),
       status: 'complete',
+      liveness: null,
       streamChunks: [],
       streamText: '',
       streamTools: [],

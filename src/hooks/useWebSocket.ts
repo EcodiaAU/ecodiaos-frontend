@@ -288,8 +288,22 @@ export function useWebSocket() {
             }
             case 'os-session:status': {
               const osStore = useOSSessionStore.getState()
-              osStore.setStatus(msg.status || 'idle')
-              if (msg.sessionId) osStore.setSessionId(msg.sessionId)
+              // 'live' is a liveness heartbeat emitted every 5s while a turn is
+              // in-flight. It does NOT change the top-level status (still streaming)
+              // — it updates the "what's happening" detail so the UI can show
+              // "thinking — 42s" or "running mcp__neo4j__cypher — 18s" instead of
+              // a blank spinner during long tool runs.
+              if (msg.status === 'live') {
+                osStore.setLiveness({
+                  phase: msg.phase || 'thinking',
+                  elapsedSec: typeof msg.elapsedSec === 'number' ? msg.elapsedSec : 0,
+                  detail: msg.detail || null,
+                  receivedAt: Date.now(),
+                })
+              } else {
+                osStore.setStatus(msg.status || 'idle')
+                if (msg.sessionId) osStore.setSessionId(msg.sessionId)
+              }
               break
             }
             case 'os-session:complete': {

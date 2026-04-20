@@ -671,12 +671,34 @@ function HandoverIndicator({ handover }: { handover: ReturnType<typeof useOSSess
 
 function StreamingIndicator({ text, tools, thinking }: { text: string; tools: LiveToolCall[]; thinking: string }) {
   const activeTools = tools.filter(t => !t.completedAt)
+  const liveness = useOSSessionStore(s => s.liveness)
+  // Tick every 1s so the elapsed counter advances smoothly between the 5s
+  // liveness heartbeats from the backend. Without this we'd jump 0→5→10 and
+  // "proof of life" would look as frozen as no-ticker.
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick(n => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
 
   // Determine status label
   let statusLabel = 'thinking'
   if (activeTools.length > 0) statusLabel = `using ${friendlyToolName(activeTools[activeTools.length - 1].name)}`
   else if (text) statusLabel = 'working'
   else if (thinking) statusLabel = 'reasoning'
+
+  // Liveness-backed elapsed timer + stale detector. The backend emits a tick
+  // every 5s; if we haven't seen one in >20s the OS is probably wedged — surface
+  // that instead of pretending it's still working.
+  const now = Date.now()
+  const livenessAgeMs = liveness ? now - liveness.receivedAt : null
+  const livenessStale = livenessAgeMs !== null && livenessAgeMs > 20_000
+  const elapsedSec = liveness
+    ? liveness.elapsedSec + Math.round((livenessAgeMs ?? 0) / 1000)
+    : null
+  const toolDetail = liveness?.phase === 'tool' && liveness.detail
+    ? `${friendlyToolName(liveness.detail.name)} · ${liveness.detail.runningSec}s`
+    : null
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-3 space-y-3">
@@ -716,7 +738,18 @@ function StreamingIndicator({ text, tools, thinking }: { text: string; tools: Li
         </div>
         <span className="text-[11px] text-on-surface-muted/30 font-mono tracking-wider">
           {statusLabel}
+          {elapsedSec !== null && !livenessStale && (
+            <span className="text-on-surface-muted/20 ml-2">· {elapsedSec}s</span>
+          )}
+          {toolDetail && !livenessStale && (
+            <span className="text-on-surface-muted/20 ml-2">· {toolDetail}</span>
+          )}
         </span>
+        {livenessStale && (
+          <span className="text-[10px] font-mono" style={{ color: '#C25B48' }}>
+            no signal {Math.round((livenessAgeMs ?? 0) / 1000)}s
+          </span>
+        )}
         {tools.length > 0 && (
           <span className="text-[10px] text-on-surface-muted/15 font-mono ml-auto">
             {tools.filter(t => t.completedAt).length}/{tools.length} tools
