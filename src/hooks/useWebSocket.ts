@@ -218,11 +218,13 @@ export function useWebSocket() {
 
               // Auto-promote to streaming on any inbound content. If we missed
               // the initial 'status: streaming' event (brief WS blip between
-              // sendMessage and first delta), the UI would sit in 'idle' while
-              // text silently accumulated in the store — user sees nothing.
-              // Only promote from idle/error, not from complete (which would
-              // wrongly resurrect a finished turn).
-              if (osStore.status === 'idle' || osStore.status === 'error') {
+              // sendMessage and first delta), the UI would sit in idle/complete
+              // while text silently accumulated in the store — user sees nothing.
+              // Promote from any non-streaming state: 'complete' here means a
+              // PRIOR turn finished, and a fresh chunk can only mean a NEW turn
+              // is in flight (a backend that's done emitting won't suddenly
+              // emit again for the old turn).
+              if (osStore.status !== 'streaming') {
                 osStore.setStatus('streaming')
               }
 
@@ -266,10 +268,11 @@ export function useWebSocket() {
                   osStore.replaceStreamText(chunk.content)
                 }
               }
-              // tool_use: agent is using a tool — track each tool live
+              // tool_use: agent is using a tool — track each tool live.
+              // streamTools is the rendered surface; we no longer also push a
+              // "[using: ...]" string into streamChunks (the raw archive) — it
+              // was duplicate noise that didn't render anywhere useful.
               else if (chunk.type === 'tool_use' && chunk.tools) {
-                const toolNames = (chunk.tools as Array<{ name: string; id?: string }>).map(t => t.name).join(', ')
-                osStore.appendStreamChunk(`[using: ${toolNames}]`)
                 for (const t of chunk.tools as Array<{ name: string; id?: string; input?: unknown }>) {
                   osStore.addStreamTool({
                     name: t.name,
@@ -327,6 +330,13 @@ export function useWebSocket() {
                   detail: msg.detail || null,
                   receivedAt: Date.now(),
                 })
+                // A heartbeat means a turn is genuinely in flight on the backend.
+                // If our local status drifted to idle/complete (missed initial
+                // 'streaming' frame, recovery race), the StreamingIndicator was
+                // hidden while the backend kept working — the silent gap. Re-promote.
+                if (osStore.status !== 'streaming') {
+                  osStore.setStatus('streaming')
+                }
               } else {
                 osStore.setStatus(msg.status || 'idle')
                 if (msg.sessionId) osStore.setSessionId(msg.sessionId)

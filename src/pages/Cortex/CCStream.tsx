@@ -417,8 +417,19 @@ function UserMessage({ message }: { message: OSSessionMessage }) {
 function AssistantMessage({ message }: { message: OSSessionMessage }) {
   const chunks = message.chunks ? parseStreamChunks(message.chunks) : []
   const textContent = chunks.filter(c => c.type === 'text').map(c => c.content).join('\n\n')
-  const toolUses = chunks.filter(c => c.type === 'tool_use')
+  const chunkToolUses = chunks.filter(c => c.type === 'tool_use')
+  // Prefer the persisted `message.tools` list (captured live during streaming).
+  // The chunk-derived tool_uses are a fallback for older messages that pre-date
+  // tool persistence — without this, finalised messages dropped tools that were
+  // visible during streaming and the dialogue went silent on what happened.
+  const persistedTools = message.tools && message.tools.length > 0
+    ? message.tools.map(t => ({ type: 'tool_use' as const, toolName: t.name, content: t.name }))
+    : null
+  const toolUses = persistedTools || chunkToolUses
   const thinkingBlocks = chunks.filter(c => c.type === 'thinking')
+  const thinkingFromMessage = !thinkingBlocks.length && message.thinking
+    ? [{ type: 'thinking' as const, content: message.thinking }]
+    : thinkingBlocks
   const displayText = textContent || message.content
 
   return (
@@ -429,7 +440,7 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
       className="py-3 space-y-3"
     >
       {/* Thinking blocks — collapsible, green tint */}
-      {thinkingBlocks.map((t, i) => (
+      {thinkingFromMessage.map((t, i) => (
         <ThinkingBlock key={`think-${i}`} content={t.content} />
       ))}
 
@@ -577,8 +588,10 @@ function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
 
   if (tools.length === 0) return null
 
-  // Show the last 4 tools (most recent at bottom)
-  const visible = tools.slice(-4)
+  // Show ALL tools so the dialogue is fully transparent about what's happening.
+  // Hiding earlier tools behind a "+N earlier" pill made long turns look frozen
+  // even though work was visibly continuing.
+  const visible = tools
 
   return (
     <div className="space-y-1">
@@ -617,11 +630,6 @@ function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
           </motion.div>
         )
       })}
-      {tools.length > 4 && (
-        <span className="text-[10px] font-mono text-on-surface-muted/20 pl-3.5">
-          +{tools.length - 4} earlier
-        </span>
-      )}
     </div>
   )
 }
@@ -738,16 +746,20 @@ function StreamingIndicator({ text, tools, thinking }: { text: string; tools: Li
         </div>
         <span className="text-[11px] text-on-surface-muted/30 font-mono tracking-wider">
           {statusLabel}
-          {elapsedSec !== null && !livenessStale && (
-            <span className="text-on-surface-muted/20 ml-2">· {elapsedSec}s</span>
+          {elapsedSec !== null && (
+            <span className={livenessStale ? 'text-on-surface-muted/15 ml-2' : 'text-on-surface-muted/20 ml-2'}>
+              · {elapsedSec}s
+            </span>
           )}
-          {toolDetail && !livenessStale && (
-            <span className="text-on-surface-muted/20 ml-2">· {toolDetail}</span>
+          {toolDetail && (
+            <span className={livenessStale ? 'text-on-surface-muted/15 ml-2' : 'text-on-surface-muted/20 ml-2'}>
+              · {toolDetail}
+            </span>
           )}
         </span>
         {livenessStale && (
           <span className="text-[10px] font-mono" style={{ color: '#C25B48' }}>
-            no signal {Math.round((livenessAgeMs ?? 0) / 1000)}s
+            quiet {Math.round((livenessAgeMs ?? 0) / 1000)}s
           </span>
         )}
         {tools.length > 0 && (
