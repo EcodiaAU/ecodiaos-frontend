@@ -19,13 +19,14 @@ import {
   GitBranch, TrendingUp, Download,
   Paperclip, FileText, X, Trash2, Image as ImageIcon, Square,
   Inbox, ChevronRight,
+  AlertTriangle, Wifi, WifiOff, Loader2,
 } from 'lucide-react'
 // SpatialLayer removed from input area to fix jitter
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
 import { MessageErrorBoundary } from '@/components/shared/MessageErrorBoundary'
-import { useOSSessionStore, type OSSessionMessage, type LiveToolCall } from '@/store/osSessionStore'
+import { useOSSessionStore, type OSSessionMessage, type LiveToolCall, type TurnTelemetry, type InlineBannerEntry } from '@/store/osSessionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
 import { listPending, cancelMessage, promoteMessage, updateMessage } from '@/api/messageQueue'
 import type { QueuedMessage } from '@/api/messageQueue'
@@ -491,6 +492,11 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
           </div>
         </MessageErrorBoundary>
       )}
+
+      {/* Pinnacle P1 per-turn telemetry — tokens, duration, model, cache hits.
+          Null-safe: older messages finalised before turn_complete was wired
+          will simply not render this row. */}
+      {message.telemetry && <TurnTelemetryRow t={message.telemetry} />}
     </motion.div>
   )
 }
@@ -578,11 +584,17 @@ function friendlyToolName(raw: string) {
   return parts.length > 1 ? parts[parts.length - 1] : parts[0]
 }
 
-/** Live tool activity feed — shows what the OS is doing right now */
+/**
+ * Live tool activity feed — shows what the OS is doing right now.
+ * Pinnacle P1: renders the full tool lifecycle — 'preparing' (input
+ * streaming in), 'running' (tool called, awaiting result), 'done', and
+ * 'error' — sourced from the backend's four-event tool_use lifecycle.
+ * Pre-P1 tools (single tool_use event) fall back to !completedAt sensing.
+ */
 function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
   // Tick every second to update elapsed timers on active tools
   const [, setTick] = useState(0)
-  const hasActive = tools.some(t => !t.completedAt)
+  const hasActive = tools.some(t => (t.status ? (t.status === 'preparing' || t.status === 'running') : !t.completedAt))
   useEffect(() => {
     if (!hasActive) return
     const id = setInterval(() => setTick(t => t + 1), 1000)
@@ -598,41 +610,325 @@ function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
 
   return (
     <div className="space-y-1">
-      {visible.map((t) => {
-        const accent = getToolAccent(t.name)
-        const isActive = !t.completedAt
-        const elapsed = isActive
-          ? Math.round((Date.now() - t.startedAt) / 1000)
-          : Math.round(((t.completedAt || t.startedAt) - t.startedAt) / 1000)
+      {visible.map((t) => (
+        <ToolLifecyclePill key={t.id} tool={t} />
+      ))}
+    </div>
+  )
+}
 
-        return (
-          <motion.div
-            key={t.id}
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: isActive ? 1 : 0.45, x: 0 }}
-            transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-            className="flex items-center gap-2"
-          >
-            {/* Pulse dot — animated while active, static when done */}
-            {isActive ? (
-              <motion.div
-                className="h-1.5 w-1.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: accent.color, boxShadow: `0 0 6px ${accent.color}60` }}
-                animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-              />
-            ) : (
-              <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent.color, opacity: 0.3 }} />
-            )}
-            <span className="text-[11px] font-mono tracking-wide" style={{ color: isActive ? `${accent.color}cc` : `${accent.color}66` }}>
-              {friendlyToolName(t.name)}
-            </span>
-            <span className="text-[10px] font-mono text-on-surface-muted/20">
-              {elapsed}s
-            </span>
-          </motion.div>
-        )
-      })}
+/**
+ * ToolLifecyclePill — one tool's lifecycle: preparing → running → done/error.
+ * Dot animation and colour reflect current status; text colour dims when
+ * complete. Name uses `friendlyToolName` (strips mcp__server__ prefix).
+ */
+function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
+  // Derive status from explicit field (Pinnacle P1) or from completedAt (legacy).
+  const status = t.status ?? (t.completedAt ? 'done' : 'running')
+  const isActive = status === 'preparing' || status === 'running'
+  const accent = getToolAccent(t.name)
+  const errorColor = '#C25B48'
+
+  const elapsed = isActive
+    ? Math.round((Date.now() - t.startedAt) / 1000)
+    : Math.round(((t.completedAt || t.startedAt) - t.startedAt) / 1000)
+
+  // Colour: tool accent for preparing/running/done, explicit red for error.
+  const dotColor = status === 'error' ? errorColor : accent.color
+  const textColor = status === 'error'
+    ? `${errorColor}cc`
+    : isActive ? `${accent.color}cc` : `${accent.color}66`
+  const elapsedOpacity = status === 'error' ? 'text-on-surface-muted/25' : 'text-on-surface-muted/20'
+
+  // Status suffix — surfaces 'preparing' so the pre-input state is visible.
+  const statusSuffix = status === 'preparing' ? ' · preparing'
+                     : status === 'error'     ? ' · failed'
+                     : null
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: isActive ? 1 : 0.55, x: 0 }}
+      transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+      className="flex items-center gap-2"
+    >
+      {/* Dot — pulses while active, static when terminal */}
+      {isActive ? (
+        <motion.div
+          className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: dotColor, boxShadow: `0 0 6px ${dotColor}60` }}
+          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      ) : status === 'error' ? (
+        <AlertTriangle className="h-3 w-3 flex-shrink-0" style={{ color: errorColor }} strokeWidth={2} />
+      ) : (
+        <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor, opacity: 0.3 }} />
+      )}
+      <span className="text-[11px] font-mono tracking-wide" style={{ color: textColor }}>
+        {friendlyToolName(t.name)}
+        {statusSuffix && <span className="opacity-70">{statusSuffix}</span>}
+      </span>
+      <span className={`text-[10px] font-mono ${elapsedOpacity}`}>
+        {elapsed}s
+      </span>
+    </motion.div>
+  )
+}
+
+/**
+ * ThinkingIndicator — pre-first-token pulse that appears on
+ * assistant_message_starting and clears on the first text_delta or
+ * tool_use_starting. Fills the silent gap between send and first output
+ * that previously looked like a hung UI.
+ */
+function ThinkingIndicator({ visible }: { visible: boolean }) {
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key="thinking-pre"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -2 }}
+          transition={{ type: 'spring', stiffness: 160, damping: 22 }}
+          className="flex items-center gap-2 py-2 px-3 rounded-xl self-start"
+          style={{
+            background: 'linear-gradient(135deg, rgba(27,122,61,0.05), rgba(46,204,113,0.02))',
+            border: '1px solid rgba(27,122,61,0.10)',
+          }}
+        >
+          {STREAM_DOTS.map((dot, i) => (
+            <motion.div
+              key={i}
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: dot.color, boxShadow: `0 0 6px ${dot.color}50` }}
+              animate={{ scale: [0.8, 1.4, 0.8], opacity: [0.3, 0.9, 0.3] }}
+              transition={{ duration: 1.5, repeat: Infinity, delay: dot.delay, ease: 'easeInOut' }}
+            />
+          ))}
+          <span className="text-[11px] font-mono tracking-wide text-on-surface-muted/50 ml-1">
+            thinking
+          </span>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+/**
+ * TurnTelemetryRow — renders per-turn telemetry captured from turn_complete.
+ * Tokens, cache-hit %, duration, model. Hover-reveal the full breakdown.
+ */
+function TurnTelemetryRow({ t }: { t: TurnTelemetry }) {
+  const [expanded, setExpanded] = useState(false)
+  const totalIn = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens
+  const cacheHitPct = totalIn > 0 ? Math.round((t.cacheReadTokens / totalIn) * 100) : 0
+  const durSec = (t.durationMs / 1000).toFixed(1)
+  const fmt = (n: number) =>
+    n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+  const modelShort = t.model
+    .replace(/^claude-/, '')
+    .replace(/-20\d{6}$/, '')
+    .replace(/^(opus|sonnet|haiku)-?/, (m) => m)
+
+  return (
+    <motion.button
+      onClick={() => setExpanded(v => !v)}
+      whileHover={{ opacity: 0.95 }}
+      className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 rounded-lg text-[10px] font-mono tracking-wide cursor-pointer select-none"
+      style={{
+        color: 'rgba(27,122,61,0.55)',
+        background: 'rgba(27,122,61,0.025)',
+        border: '1px solid rgba(27,122,61,0.06)',
+      }}
+    >
+      <span>{fmt(t.inputTokens)}→{fmt(t.outputTokens)}</span>
+      <span>·</span>
+      <span>{durSec}s</span>
+      <span>·</span>
+      <span>{modelShort}</span>
+      {cacheHitPct > 0 && (
+        <>
+          <span>·</span>
+          <span>{cacheHitPct}% cached</span>
+        </>
+      )}
+      {expanded && (
+        <>
+          <span className="w-full" aria-hidden="true" />
+          <span className="opacity-70">in {t.inputTokens}</span>
+          <span className="opacity-70">cache-r {t.cacheReadTokens}</span>
+          <span className="opacity-70">cache-w {t.cacheWriteTokens}</span>
+          <span className="opacity-70">out {t.outputTokens}</span>
+          {t.stopReason && <span className="opacity-70">stop:{t.stopReason}</span>}
+        </>
+      )}
+    </motion.button>
+  )
+}
+
+/**
+ * InlineBanner — transient in-stream notice for compaction start/end and
+ * session events (session_resumed / recovered / etc). Non-blocking — fades
+ * in and out. Auto-dismiss handled by the parent stack.
+ */
+function InlineBanner({ banner }: { banner: InlineBannerEntry }) {
+  const isEnd = banner.kind === 'compaction' && banner.detail === 'end'
+  const label =
+    banner.kind === 'compaction'
+      ? (banner.detail === 'start' ? 'Compacting context…' : 'Compaction complete')
+      : friendlyEventLabel(banner.detail)
+  const accent = isEnd ? '#1B7A3D' : '#D97706'
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 4, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -2, scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 140, damping: 22 }}
+      className="flex items-center gap-2 py-1.5 px-3 rounded-xl text-[11px] font-mono tracking-wide self-start"
+      style={{
+        background: `linear-gradient(135deg, ${accent}0a, ${accent}04)`,
+        border: `1px solid ${accent}20`,
+        color: `${accent}dd`,
+      }}
+    >
+      {banner.kind === 'compaction' && !isEnd && (
+        <motion.div
+          className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: accent, boxShadow: `0 0 6px ${accent}70` }}
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      )}
+      {isEnd && (
+        <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent, opacity: 0.5 }} />
+      )}
+      {banner.kind === 'session_event' && (
+        <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent, opacity: 0.7 }} />
+      )}
+      <span>{label}</span>
+    </motion.div>
+  )
+}
+
+function friendlyEventLabel(subtype: string): string {
+  // Map SDK system subtypes to human copy. Unknown subtypes fall through to
+  // the raw string so nothing goes silent on us.
+  switch (subtype) {
+    case 'session_resumed':    return 'Session resumed'
+    case 'session_recovered':  return 'Session recovered'
+    case 'session_restarted':  return 'Session restarted'
+    case 'init':               return 'Session ready'
+    default:                   return subtype
+  }
+}
+
+/**
+ * InlineBannerStack — renders the transient banner queue. Auto-dismisses
+ * each entry after 4s (compaction end / session events) or keeps it until
+ * replaced (compaction start — dismissed by the matching end event).
+ */
+function InlineBannerStack() {
+  const banners = useOSSessionStore(s => s.inlineBanners)
+  const dismiss = useOSSessionStore(s => s.dismissInlineBanner)
+
+  useEffect(() => {
+    // Auto-dismiss terminal banners after 4s.
+    const timers: ReturnType<typeof setTimeout>[] = []
+    for (const b of banners) {
+      const isTransient =
+        (b.kind === 'compaction' && b.detail === 'end') ||
+        b.kind === 'session_event'
+      if (isTransient) {
+        timers.push(setTimeout(() => dismiss(b.id), 4000))
+      }
+    }
+    return () => { for (const t of timers) clearTimeout(t) }
+  }, [banners, dismiss])
+
+  // Also: when a compaction 'start' banner has a matching 'end' in the list,
+  // drop the start (the end conveys the outcome).
+  useEffect(() => {
+    const hasEnd = banners.some(b => b.kind === 'compaction' && b.detail === 'end')
+    if (hasEnd) {
+      const starts = banners.filter(b => b.kind === 'compaction' && b.detail === 'start')
+      for (const s of starts) dismiss(s.id)
+    }
+  }, [banners, dismiss])
+
+  if (banners.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1.5 my-2">
+      <AnimatePresence mode="popLayout">
+        {banners.map(b => <InlineBanner key={b.id} banner={b} />)}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/**
+ * ConnectionStateIndicator — always-visible pill in the chrome showing the
+ * underlying WS state. Drives from the 'ecodia:connection-state' CustomEvent
+ * dispatched by useWebSocket.
+ */
+function ConnectionStateIndicator() {
+  const [state, setState] = useState<'connected' | 'connecting' | 'reconnecting' | 'catching_up' | 'disconnected' | 'backend_alive'>('connecting')
+
+  useEffect(() => {
+    const onState = (e: Event) => {
+      const d = (e as CustomEvent).detail as typeof state
+      if (d) setState(d)
+    }
+    window.addEventListener('ecodia:connection-state', onState)
+    return () => window.removeEventListener('ecodia:connection-state', onState)
+  }, [])
+
+  // Connected and quiet — show a minimal dot, don't clutter.
+  if (state === 'connected') {
+    return (
+      <div
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: '#1B7A3D', boxShadow: '0 0 4px rgba(27,122,61,0.45)' }}
+        title="Connected"
+        aria-label="Connected"
+      />
+    )
+  }
+
+  // All other states — visible pill with icon + label.
+  const cfg = (() => {
+    switch (state) {
+      case 'connecting':
+        return { label: 'Connecting…', color: '#D97706', Icon: Loader2, spin: true }
+      case 'reconnecting':
+        return { label: 'Reconnecting…', color: '#D97706', Icon: Loader2, spin: true }
+      case 'catching_up':
+        return { label: 'Catching up…', color: '#D97706', Icon: Loader2, spin: true }
+      case 'backend_alive':
+        return { label: 'Stream down (backend working)', color: '#D97706', Icon: Wifi, spin: false }
+      case 'disconnected':
+      default:
+        return { label: 'Disconnected', color: '#C25B48', Icon: WifiOff, spin: false }
+    }
+  })()
+
+  const { label, color, Icon, spin } = cfg
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono tracking-wide"
+      style={{
+        background: `${color}0f`,
+        border: `1px solid ${color}26`,
+        color: `${color}dd`,
+      }}
+      title={label}
+      aria-label={label}
+    >
+      <Icon className={`h-2.5 w-2.5 ${spin ? 'animate-spin' : ''}`} strokeWidth={2} />
+      <span>{label}</span>
     </div>
   )
 }
@@ -1209,6 +1505,9 @@ export default function CCStream() {
   const streamThinking = useOSSessionStore(s => s.streamThinking)
   const addUserMessage = useOSSessionStore(s => s.addUserMessage)
   const handover = useOSSessionStore(s => s.handover)
+  // Pinnacle P1: surface the pre-token "thinking" pulse during the gap
+  // between assistant_message_starting and first text/tool event.
+  const assistantTurnStarting = useOSSessionStore(s => s.assistantTurnStarting)
 
   // ─── Message queue state ────────────────────────────────────────────
   const [sendMode, setSendMode] = useState<'direct' | 'queue'>(() => {
@@ -1543,11 +1842,21 @@ export default function CCStream() {
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false) }}
       onDrop={async e => { e.preventDefault(); setIsDragging(false); await handleFiles(e.dataTransfer.files) }}
     >
-      {/* Queue pill — floats top-right, hidden when empty */}
-      <div className="absolute top-4 right-4 z-20 pointer-events-auto">
-        <AnimatePresence>
-          <QueuePill onClick={() => setQueueDrawerOpen(true)} />
-        </AnimatePresence>
+      {/* Top-right chrome cluster — stacks horizontally so neither the queue
+          pill nor the connection state indicator covers the other. Connection
+          indicator sits further left (subtle, always-on), queue pill hugs the
+          right edge (actionable, click-to-open). */}
+      <div className="absolute top-3 right-4 z-40 flex items-center gap-2">
+        {/* Pinnacle P1 — always-visible connection state chip. */}
+        <div className="pointer-events-none">
+          <ConnectionStateIndicator />
+        </div>
+        {/* Message queue pill — hidden when empty. */}
+        <div className="pointer-events-auto">
+          <AnimatePresence>
+            <QueuePill onClick={() => setQueueDrawerOpen(true)} />
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Queue drawer */}
@@ -1633,6 +1942,12 @@ export default function CCStream() {
               </AnimatePresence>
             </div>
           )}
+
+          {/* Pinnacle P1 inline surfaces — banners (compaction, session events)
+              and the pre-token thinking pulse. Both sit in the stream flow so
+              they scroll with the conversation, not pinned chrome. */}
+          <InlineBannerStack />
+          <ThinkingIndicator visible={status === 'streaming' && assistantTurnStarting && !streamText && !streamThinking && streamTools.length === 0} />
 
           {status === 'streaming' && <StreamingIndicator text={streamText} tools={streamTools} thinking={streamThinking} />}
           <HandoverIndicator handover={handover} />

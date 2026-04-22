@@ -20,6 +20,8 @@ export interface OSSessionMessage {
   tools?: LiveToolCall[]
   /** Extended thinking content for this response */
   thinking?: string
+  /** Per-turn telemetry captured from turn_complete (Pinnacle P1) */
+  telemetry?: TurnTelemetry
   timestamp: Date
 }
 
@@ -43,6 +45,34 @@ export interface LiveToolCall {
   result?: string
   startedAt: number
   completedAt?: number
+  /** Pinnacle P1 lifecycle — 'preparing' between tool_use_starting and
+   *  tool_use_input_complete; 'running' once input is finalised and the tool
+   *  is actually executing; 'done' on tool_use_result; 'error' on tool_use_error. */
+  status?: 'preparing' | 'running' | 'done' | 'error'
+  /** True when status === 'error'; result carries the error body. */
+  isError?: boolean
+}
+
+/** Per-turn telemetry emitted in turn_complete (Pinnacle P1). */
+export interface TurnTelemetry {
+  turnId: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  durationMs: number
+  stopReason: string | null
+  at: number
+}
+
+/** Transient inline banner (compaction, session events). */
+export interface InlineBannerEntry {
+  id: string
+  kind: 'compaction' | 'session_event'
+  /** For compaction: 'start' | 'end'. For session_event: the subtype string. */
+  detail: string
+  at: number
 }
 
 /**
@@ -74,6 +104,20 @@ interface OSSessionStore {
   streamTools: LiveToolCall[]
   /** Accumulated thinking text during current stream (real-time) */
   streamThinking: string
+  /** Pinnacle P1: set on assistant_message_starting, cleared on first
+   *  text_delta / tool_use_starting / turn_complete — drives the pre-token
+   *  "thinking…" pulse so the gap between send and first output is visible. */
+  assistantTurnStarting: boolean
+  /** Pinnacle P1: latest pending turn telemetry (attached to the next finalised message). */
+  pendingTurnTelemetry: TurnTelemetry | null
+  /** Pinnacle P1: transient banners (compaction start/end, session_event). */
+  inlineBanners: InlineBannerEntry[]
+  /** Pinnacle P1: explicit compaction phase from compact_boundary events.
+   *  Distinct from `compacting` (which was driven by legacy status messages). */
+  compactionPhase: 'idle' | 'active'
+  /** Pinnacle P1: monotonic seq of last WS event applied. Persisted so a hard
+   *  refresh can request replay from the backend ring buffer. */
+  lastSeenSeq: number | null
   sessionId: string | null
   /** Token usage tracking for auto-compaction */
   tokenUsage: TokenUsage | null
@@ -117,6 +161,13 @@ interface OSSessionStore {
   clearInterruptQueue: () => void
   /** Update handover state (from WebSocket events) */
   setHandover: (state: OSSessionStore['handover']) => void
+  // Pinnacle P1 actions
+  setAssistantTurnStarting: (v: boolean) => void
+  setPendingTurnTelemetry: (t: TurnTelemetry | null) => void
+  pushInlineBanner: (b: Omit<InlineBannerEntry, 'id' | 'at'>) => void
+  dismissInlineBanner: (id: string) => void
+  setCompactionPhase: (p: 'idle' | 'active') => void
+  setLastSeenSeq: (seq: number | null) => void
 }
 
 /** Max messages to keep in memory/localStorage. Older messages are trimmed on add. */
@@ -201,6 +252,11 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   streamText: '',
   streamTools: [],
   streamThinking: '',
+  assistantTurnStarting: false,
+  pendingTurnTelemetry: null,
+  inlineBanners: [],
+  compactionPhase: 'idle',
+  lastSeenSeq: null,
   sessionId: null,
   tokenUsage: null,
   compacting: false,
@@ -251,6 +307,8 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
         streamText: '',
         streamTools: [],
         streamThinking: '',
+        assistantTurnStarting: true,
+        pendingTurnTelemetry: null,
         lastUserMessageAt: new Date().toISOString(),
         recoveryAttempted: false,
       }
@@ -317,10 +375,16 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
       _flushScheduled = false
     }
 
-    const { streamChunks, streamText, streamTools, streamThinking } = get()
+    const { streamChunks, streamText, streamTools, streamThinking, pendingTurnTelemetry } = get()
     // Only add a message if we have content
     if (streamChunks.length === 0 && !streamText && streamTools.length === 0 && !streamThinking) {
-      set({ status: 'complete', streamChunks: [], streamText: '', streamTools: [], streamThinking: '', lastUserMessageAt: null })
+      set({
+        status: 'complete',
+        streamChunks: [], streamText: '', streamTools: [], streamThinking: '',
+        assistantTurnStarting: false,
+        pendingTurnTelemetry: null,
+        lastUserMessageAt: null,
+      })
       return
     }
     // Graceful fallback when text never arrived. "(processing...)" looked
@@ -338,6 +402,7 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
         chunks: streamChunks,
         tools: streamTools.length > 0 ? streamTools : undefined,
         thinking: streamThinking || undefined,
+        telemetry: pendingTurnTelemetry || undefined,
         timestamp: new Date(),
       }]),
       status: 'complete',
@@ -346,6 +411,8 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
       streamText: '',
       streamTools: [],
       streamThinking: '',
+      assistantTurnStarting: false,
+      pendingTurnTelemetry: null,
       lastUserMessageAt: null,
     }))
   },
@@ -356,6 +423,8 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   clearMessages: () => set({
     messages: [], streamChunks: [], streamText: '', streamTools: [], streamThinking: '', status: 'idle',
     tokenUsage: null, lastUserMessageAt: null, recoveryAttempted: false, interruptQueue: [],
+    assistantTurnStarting: false, pendingTurnTelemetry: null, inlineBanners: [],
+    compactionPhase: 'idle', lastSeenSeq: null,
   }),
 
   /** Inject a response recovered from the backend after tab close */
@@ -388,6 +457,31 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   clearInterruptQueue: () => set({ interruptQueue: [] }),
 
   setHandover: (handoverState) => set({ handover: handoverState }),
+
+  // ─── Pinnacle P1 actions ────────────────────────────────────────────────
+
+  setAssistantTurnStarting: (v) => set({ assistantTurnStarting: v }),
+
+  setPendingTurnTelemetry: (t) => set({ pendingTurnTelemetry: t }),
+
+  pushInlineBanner: (b) => {
+    set(state => ({
+      inlineBanners: [
+        ...state.inlineBanners,
+        { id: crypto.randomUUID(), at: Date.now(), ...b },
+      ],
+    }))
+  },
+
+  dismissInlineBanner: (id) => {
+    set(state => ({
+      inlineBanners: state.inlineBanners.filter(bn => bn.id !== id),
+    }))
+  },
+
+  setCompactionPhase: (p) => set({ compactionPhase: p }),
+
+  setLastSeenSeq: (seq) => set({ lastSeenSeq: seq }),
 }),
 {
   name: 'os-session-chat',
@@ -395,6 +489,9 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
     messages: state.messages,
     sessionId: state.sessionId,
     lastUserMessageAt: state.lastUserMessageAt,
+    // Pinnacle P1: persist lastSeenSeq so a hard refresh / tab close can
+    // request replay from the backend ring buffer.
+    lastSeenSeq: state.lastSeenSeq,
   }),
 },
 ))

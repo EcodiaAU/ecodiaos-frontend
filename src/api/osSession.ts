@@ -89,6 +89,29 @@ export async function recoverResponse(since?: string) {
   }
 }
 
+/** Pinnacle P1: seq-based event replay from the backend ring buffer.
+ *
+ *  Call this whenever we detect a gap (`incoming.seq > lastSeenSeq + 1`)
+ *  or on WS reconnect when `lastSeenSeq` is known. Returns every event
+ *  with `seq > since_seq` that's still in the 100-event ring buffer. If
+ *  `since_seq` is older than the oldest buffered event, the backend
+ *  simply returns the whole buffer — callers should still dedupe by seq. */
+export async function recoverEventsSince(sinceSeq: number) {
+  const { data } = await api.get('/os-session/recover', { params: { since_seq: sinceSeq } })
+  return data as {
+    events: Array<{
+      seq: number
+      ts: string
+      type: string
+      sessionId?: string | null
+      data?: unknown
+      [k: string]: unknown
+    }>
+    count: number
+    seq_based: true
+  }
+}
+
 /** Abort the active OS session query immediately */
 export async function abortOS() {
   const { data } = await api.post('/os-session/abort')

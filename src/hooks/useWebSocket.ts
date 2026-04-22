@@ -7,14 +7,272 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useOSSessionStore, getEffectiveStreamTextLength, flushStreamBuffersSync } from '@/store/osSessionStore'
 import type { CCSession } from '@/types/claudeCode'
 import api from '@/api/client'
+import { recoverEventsSince } from '@/api/osSession'
 
 /**
- * Connection state — drives the ambient offline indicator.
- * Dispatched as a CustomEvent so any component can listen without re-renders.
+ * Connection state — drives the ambient offline indicator and the
+ * ConnectionStateIndicator chrome pill.
+ *
+ * States:
+ *   connected   — WS open, events flowing normally.
+ *   connecting  — first handshake in progress.
+ *   reconnecting — WS dropped, reconnect scheduled / in flight.
+ *   catching_up — WS reconnected, replay call in flight.
+ *   disconnected — WS dropped and HTTP status poll also failed (hard offline).
+ *   backend_alive — WS down, HTTP status poll confirms backend is working.
  */
-function setConnectionState(state: 'connected' | 'connecting' | 'disconnected') {
+type ConnectionState =
+  | 'connected' | 'connecting' | 'reconnecting'
+  | 'catching_up' | 'disconnected' | 'backend_alive'
+
+function setConnectionState(state: ConnectionState) {
   window.dispatchEvent(new CustomEvent('ecodia:connection-state', { detail: state }))
 }
+
+/**
+ * Pinnacle P1 — single point that applies one os-session:output chunk to the
+ * store. Extracted so both live WS events and replayed events (from the
+ * `/os-session/recover?since_seq=N` endpoint) go through the same path.
+ * Pure-ish: the only side effect is the Zustand store update.
+ */
+function applyOSOutputChunk(chunk: unknown) {
+  if (!chunk || typeof chunk !== 'object') return
+  const c = chunk as Record<string, unknown>
+  const osStore = useOSSessionStore.getState()
+
+  // Auto-promote to streaming on any inbound content. If we missed
+  // the initial 'status: streaming' event (brief WS blip between
+  // sendMessage and first delta), the UI would sit in idle/complete
+  // while text silently accumulated in the store — user sees nothing.
+  if (osStore.status !== 'streaming') {
+    osStore.setStatus('streaming')
+  }
+
+  const type = c.type as string
+  const content = c.content as string | undefined
+
+  // ─── Pinnacle P1: assistant_message_starting ─────────────────────────
+  if (type === 'assistant_message_starting') {
+    osStore.setAssistantTurnStarting(true)
+    return
+  }
+
+  // thinking_delta: real-time streaming of extended thinking
+  if (type === 'thinking_delta' && content) {
+    // First thinking also clears the pre-token pulse.
+    if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
+    osStore.appendStreamThinking(content)
+    return
+  }
+  // thinking: complete thinking block
+  if (type === 'thinking' && content) {
+    if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
+    osStore.appendStreamThinking(content)
+    return
+  }
+
+  // text_delta: real-time streaming from Agent SDK partial messages.
+  // Goes only into streamText (the rendered buffer). streamChunks is for raw
+  // NDJSON archival — appending deltas there too made saved content double.
+  if (type === 'text_delta' && content) {
+    if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
+    osStore.appendStreamText(content)
+    return
+  }
+
+  // assistant_text: complete text from an assistant turn (no-stream fallback).
+  if (type === 'assistant_text' && content) {
+    flushStreamBuffersSync()
+    const effectiveLen = getEffectiveStreamTextLength()
+    if (content.length > effectiveLen) {
+      osStore.replaceStreamText(content)
+    }
+    return
+  }
+
+  // ─── Pinnacle P1: tool_use lifecycle ─────────────────────────────────
+  // tool_use_starting: name + id known, input not yet finalised.
+  if (type === 'tool_use_starting') {
+    const id = c.id as string | undefined
+    const name = c.name as string | undefined
+    if (name) {
+      if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
+      osStore.addStreamTool({ name, toolUseId: id, status: 'preparing' })
+    }
+    return
+  }
+  // tool_use_input_complete: input json assembled, tool call dispatching.
+  if (type === 'tool_use_input_complete') {
+    const id = c.id as string | undefined
+    const name = c.name as string | undefined
+    const input = c.input
+    const inputStr = typeof input === 'string'
+      ? input
+      : input != null ? JSON.stringify(input, null, 2) : undefined
+    const matchKey = id || name
+    if (matchKey) {
+      osStore.updateStreamTool(matchKey, { input: inputStr, status: 'running' })
+    }
+    return
+  }
+  // tool_use_result: tool succeeded with output.
+  if (type === 'tool_use_result') {
+    const matchKey = (c.tool_use_id as string | undefined) || (c.name as string | undefined)
+    if (matchKey) {
+      const resultStr = content
+        ? (typeof content === 'string' ? content : JSON.stringify(content, null, 2))
+        : undefined
+      osStore.updateStreamTool(matchKey, {
+        result: resultStr,
+        completedAt: Date.now(),
+        status: 'done',
+      })
+    }
+    return
+  }
+  // tool_use_error: tool failed — surface error content + mark errored.
+  if (type === 'tool_use_error') {
+    const matchKey = (c.tool_use_id as string | undefined) || (c.name as string | undefined)
+    if (matchKey) {
+      const resultStr = content
+        ? (typeof content === 'string' ? content : JSON.stringify(content, null, 2))
+        : undefined
+      osStore.updateStreamTool(matchKey, {
+        result: resultStr,
+        completedAt: Date.now(),
+        status: 'error',
+        isError: true,
+      })
+    }
+    return
+  }
+
+  // Legacy tool_use (one-shot — whole tool in a single event). Still emitted
+  // by some older code paths. Treated as both start+complete.
+  if (type === 'tool_use' && Array.isArray(c.tools)) {
+    for (const t of c.tools as Array<{ name: string; id?: string; input?: unknown }>) {
+      osStore.addStreamTool({
+        name: t.name,
+        toolUseId: t.id,
+        input: t.input ? JSON.stringify(t.input, null, 2) : undefined,
+      })
+    }
+    return
+  }
+  // Legacy tool_result — match by tool_use_id or name.
+  if (type === 'tool_result') {
+    const matchKey = (c.tool_use_id as string | undefined) || (c.name as string | undefined)
+    if (matchKey) {
+      const resultStr = content
+        ? (typeof content === 'string' ? content : JSON.stringify(content, null, 2))
+        : undefined
+      osStore.updateStreamTool(matchKey, {
+        result: resultStr,
+        completedAt: Date.now(),
+        status: 'done',
+      })
+    }
+    return
+  }
+
+  // ─── Pinnacle P1: turn_complete ──────────────────────────────────────
+  // Full telemetry for the turn — gets attached to the next finalised message.
+  if (type === 'turn_complete') {
+    osStore.setAssistantTurnStarting(false)
+    osStore.setPendingTurnTelemetry({
+      turnId: crypto.randomUUID(),
+      model: (c.model as string) || 'unknown',
+      inputTokens: Number(c.input_tokens ?? 0),
+      outputTokens: Number(c.output_tokens ?? 0),
+      cacheReadTokens: Number(c.cache_read_tokens ?? 0),
+      cacheWriteTokens: Number(c.cache_write_tokens ?? 0),
+      durationMs: Number(c.duration_ms ?? 0),
+      stopReason: (c.stop_reason as string) ?? null,
+      at: Date.now(),
+    })
+    return
+  }
+
+  // ─── Pinnacle P1: compact_boundary phase events ──────────────────────
+  if (type === 'compact_boundary') {
+    const phase = c.phase as string
+    if (phase === 'start') {
+      osStore.setCompactionPhase('active')
+      osStore.pushInlineBanner({ kind: 'compaction', detail: 'start' })
+    } else if (phase === 'end') {
+      osStore.setCompactionPhase('idle')
+      osStore.pushInlineBanner({ kind: 'compaction', detail: 'end' })
+    }
+    return
+  }
+
+  // ─── Pinnacle P1: session_event ──────────────────────────────────────
+  if (type === 'session_event') {
+    const subtype = (c.subtype as string) || 'unknown'
+    osStore.pushInlineBanner({ kind: 'session_event', detail: subtype })
+    return
+  }
+
+  // Legacy stream format (backward compat with CLI-spawned sessions).
+  if (type === 'stream' && content) {
+    osStore.appendStreamChunk(content)
+    try {
+      const parsed = JSON.parse(content)
+      if (parsed.type === 'assistant' && parsed.message?.content) {
+        for (const block of parsed.message.content) {
+          if (block.type === 'text' && block.text) {
+            osStore.appendStreamText(block.text)
+          }
+          if (block.type === 'tool_use') {
+            osStore.addStreamTool({ name: block.name })
+          }
+        }
+      }
+      if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+        osStore.appendStreamText(parsed.delta.text)
+      }
+    } catch { /* not JSON */ }
+    return
+  }
+}
+
+/**
+ * Replay events returned from /os-session/recover. Dedupes by seq against
+ * the store's lastSeenSeq, updates lastSeenSeq to the max observed.
+ */
+function replayRecoveredEvents(events: Array<{ seq: number; type: string; data?: unknown; [k: string]: unknown }>) {
+  if (!events || events.length === 0) return
+  const osStore = useOSSessionStore.getState()
+  let maxSeq = osStore.lastSeenSeq ?? -Infinity
+
+  for (const ev of events) {
+    if (typeof ev.seq !== 'number') continue
+    // Skip events we already applied.
+    if (osStore.lastSeenSeq != null && ev.seq <= osStore.lastSeenSeq) continue
+    if (ev.seq > maxSeq) maxSeq = ev.seq
+
+    // Reuse the same per-type dispatch the live stream uses. The backend
+    // envelope is { seq, ts, type, sessionId?, data? } — we only apply
+    // os-session:output chunks via replay here, matching the live handler.
+    if (ev.type === 'os-session:output') {
+      applyOSOutputChunk(ev.data)
+    } else if (ev.type === 'os-session:status') {
+      // Status is idempotent; just apply to the store.
+      const m = ev as { status?: string; sessionId?: string }
+      if (m.status) useOSSessionStore.getState().setStatus(m.status as 'idle' | 'streaming' | 'complete' | 'error')
+    } else if (ev.type === 'os-session:complete') {
+      useOSSessionStore.getState().finalizeResponse()
+    }
+    // Other types (tokens, energy, handover) are dropped on replay — they're
+    // either visual-only or will re-fetch fresh via their own queries.
+  }
+
+  if (Number.isFinite(maxSeq)) {
+    useOSSessionStore.getState().setLastSeenSeq(maxSeq as number)
+  }
+}
+
+export { applyOSOutputChunk, replayRecoveredEvents }
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
@@ -65,7 +323,27 @@ export function useWebSocket() {
           hasConnectedBefore = true
           setConnectionState('connected')
 
-          // On WS reconnect, check if we missed an OS session response
+          // ─── Pinnacle P1: seq-based replay on reconnect ────────────────
+          // If we had a lastSeenSeq, ask the backend ring buffer for anything
+          // newer. This fills any events that fired while the WS was down. Note
+          // that lastSeenSeq is persisted (localStorage), so this also fires on
+          // fresh page loads where an old seq is known — the ring buffer is a
+          // 100-event window, so stale requests just return the current window.
+          if (isReconnect) {
+            const osStore = useOSSessionStore.getState()
+            const since = osStore.lastSeenSeq
+            if (since != null) {
+              setConnectionState('catching_up')
+              recoverEventsSince(since).then(r => {
+                replayRecoveredEvents(r.events)
+              }).catch(() => { /* best-effort */ }).finally(() => {
+                setConnectionState('connected')
+              })
+            }
+          }
+
+          // Legacy recovery: response-level recover for the tab-close-mid-turn
+          // case. Runs in parallel with seq replay — they're complementary.
           if (isReconnect) {
             const osStore = useOSSessionStore.getState()
             if (osStore.lastUserMessageAt || osStore.status === 'streaming') {
@@ -104,6 +382,31 @@ export function useWebSocket() {
           if (wsRef.current !== ws) return
           const msg = JSON.parse(event.data)
           const cortex = useCortexStore.getState()
+
+          // ─── Pinnacle P1: seq tracking + gap detection ────────────────
+          // Backend stamps every broadcast with { seq, ts, type, ... }. If we
+          // see a jump, fetch the missing slice from the recover endpoint and
+          // replay it through the same per-type dispatch. Deduped in-place via
+          // lastSeenSeq so a mid-flight live event never double-applies.
+          if (typeof msg.seq === 'number') {
+            const osStore = useOSSessionStore.getState()
+            const prev = osStore.lastSeenSeq
+            // Backend resets seq to 0 when a new OS session begins. If we see
+            // seq much lower than prev, a session boundary has happened —
+            // don't treat it as a gap; just trust the new stream.
+            if (prev != null && msg.seq < prev - 10) {
+              osStore.setLastSeenSeq(msg.seq)
+            } else if (prev != null && msg.seq > prev + 1) {
+              // Gap detected — fill it from the ring buffer. Fire and forget;
+              // the live event path will still apply msg itself below.
+              recoverEventsSince(prev).then(r => {
+                replayRecoveredEvents(r.events)
+              }).catch(() => { /* best-effort, live events keep flowing */ })
+              osStore.setLastSeenSeq(msg.seq)
+            } else if (prev == null || msg.seq > prev) {
+              osStore.setLastSeenSeq(msg.seq)
+            }
+          }
 
           switch (msg.type) {
             case 'notification':
@@ -212,108 +515,7 @@ export function useWebSocket() {
 
             // ─── OS Session (Agent SDK stream) ──────────────────
             case 'os-session:output': {
-              const osStore = useOSSessionStore.getState()
-              const chunk = msg.data
-              if (!chunk) break
-
-              // Auto-promote to streaming on any inbound content. If we missed
-              // the initial 'status: streaming' event (brief WS blip between
-              // sendMessage and first delta), the UI would sit in idle/complete
-              // while text silently accumulated in the store — user sees nothing.
-              // Promote from any non-streaming state: 'complete' here means a
-              // PRIOR turn finished, and a fresh chunk can only mean a NEW turn
-              // is in flight (a backend that's done emitting won't suddenly
-              // emit again for the old turn).
-              if (osStore.status !== 'streaming') {
-                osStore.setStatus('streaming')
-              }
-
-              // thinking_delta: real-time streaming of extended thinking
-              if (chunk.type === 'thinking_delta' && chunk.content) {
-                osStore.appendStreamThinking(chunk.content)
-              }
-              // thinking: complete thinking block (from assistant message)
-              else if (chunk.type === 'thinking' && chunk.content) {
-                osStore.appendStreamThinking(chunk.content)
-              }
-              // text_delta: real-time streaming from Agent SDK partial messages.
-              // Goes only into streamText (the rendered buffer). streamChunks is
-              // for raw NDJSON archival — appending deltas there too made the
-              // saved message content double-up after finalize.
-              else if (chunk.type === 'text_delta' && chunk.content) {
-                osStore.appendStreamText(chunk.content)
-              }
-              // assistant_text: complete text from an assistant turn.
-              //
-              // Two cases to handle:
-              //   A) Normal streaming — text_delta fired continuously, streamText
-              //      already contains the full text by the time this arrives.
-              //      Appending here would double the message.
-              //   B) No-stream case — the SDK delivered the message as a single
-              //      `assistant` block without preceding content_block_delta
-              //      events. This happens with short responses, some Bedrock
-              //      paths, and certain model configurations. Without this
-              //      fallback, streamText stays empty and finalize shows the
-              //      ugly "(processing...)" placeholder despite the message
-              //      having fully arrived on the wire.
-              //
-              // Fix: if the incoming full text is longer than what we have
-              // (including the rAF-batched buffer that hasn't flushed yet),
-              // flush pending deltas then replace with the full text. This
-              // covers case B without double-rendering case A (equal lengths).
-              else if (chunk.type === 'assistant_text' && chunk.content) {
-                flushStreamBuffersSync()
-                const effectiveLen = getEffectiveStreamTextLength()
-                if (chunk.content.length > effectiveLen) {
-                  osStore.replaceStreamText(chunk.content)
-                }
-              }
-              // tool_use: agent is using a tool — track each tool live.
-              // streamTools is the rendered surface; we no longer also push a
-              // "[using: ...]" string into streamChunks (the raw archive) — it
-              // was duplicate noise that didn't render anywhere useful.
-              else if (chunk.type === 'tool_use' && chunk.tools) {
-                for (const t of chunk.tools as Array<{ name: string; id?: string; input?: unknown }>) {
-                  osStore.addStreamTool({
-                    name: t.name,
-                    toolUseId: t.id,
-                    input: t.input ? JSON.stringify(t.input, null, 2) : undefined,
-                  })
-                }
-              }
-              // tool_result: tool finished — match by tool_use_id
-              else if (chunk.type === 'tool_result') {
-                const matchKey = chunk.tool_use_id || chunk.name
-                if (matchKey) {
-                  const resultStr = chunk.content
-                    ? (typeof chunk.content === 'string' ? chunk.content : JSON.stringify(chunk.content, null, 2))
-                    : undefined
-                  osStore.updateStreamTool(matchKey, {
-                    result: resultStr,
-                    completedAt: Date.now(),
-                  })
-                }
-              }
-              // Legacy stream format (backward compat with CLI-spawned sessions)
-              else if (chunk.type === 'stream' && chunk.content) {
-                osStore.appendStreamChunk(chunk.content)
-                try {
-                  const parsed = JSON.parse(chunk.content)
-                  if (parsed.type === 'assistant' && parsed.message?.content) {
-                    for (const block of parsed.message.content) {
-                      if (block.type === 'text' && block.text) {
-                        osStore.appendStreamText(block.text)
-                      }
-                      if (block.type === 'tool_use') {
-                        osStore.addStreamTool({ name: block.name })
-                      }
-                    }
-                  }
-                  if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                    osStore.appendStreamText(parsed.delta.text)
-                  }
-                } catch { /* not JSON */ }
-              }
+              applyOSOutputChunk(msg.data)
               break
             }
             case 'os-session:status': {
@@ -412,7 +614,7 @@ export function useWebSocket() {
         const handleDrop = () => {
           if (wsRef.current === ws) wsRef.current = null
           if (mounted) {
-            setConnectionState('disconnected')
+            setConnectionState('reconnecting')
             reconnect()
           }
         }
@@ -420,7 +622,7 @@ export function useWebSocket() {
         ws.onerror = handleDrop
       } catch {
         if (mounted) {
-          setConnectionState('disconnected')
+          setConnectionState('reconnecting')
           reconnect()
         }
       }
