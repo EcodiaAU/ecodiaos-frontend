@@ -11,13 +11,14 @@
  * The system speaks. You observe. Occasionally you approve.
  */
 import { useState, useRef, useEffect, useCallback, useMemo, useId, memo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   RotateCcw, Brain, ChevronDown,
   Mail, DollarSign, Zap, Activity,
   GitBranch, TrendingUp, Download,
   Paperclip, FileText, X, Trash2, Image as ImageIcon, Square,
+  Inbox, ChevronRight,
 } from 'lucide-react'
 // SpatialLayer removed from input area to fix jitter
 import ReactMarkdown, { type Components } from 'react-markdown'
@@ -26,6 +27,8 @@ import { MermaidBlock } from '@/components/MermaidBlock'
 import { MessageErrorBoundary } from '@/components/shared/MessageErrorBoundary'
 import { useOSSessionStore, type OSSessionMessage, type LiveToolCall } from '@/store/osSessionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
+import { listPending, cancelMessage, promoteMessage, updateMessage } from '@/api/messageQueue'
+import type { QueuedMessage } from '@/api/messageQueue'
 import { getGmailStats } from '@/api/gmail'
 import { getFinanceSummary } from '@/api/finance'
 import { getActionStats } from '@/api/actions'
@@ -772,6 +775,417 @@ function StreamingIndicator({ text, tools, thinking }: { text: string; tools: Li
   )
 }
 
+// ─── Message Queue helpers + components ─────────────────────────────
+
+function formatMsgAge(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ${mins % 60}m ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function SendModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: 'direct' | 'queue'
+  onChange: (m: 'direct' | 'queue') => void
+}) {
+  return (
+    <div
+      className="flex items-center rounded-lg overflow-hidden flex-shrink-0"
+      style={{ border: '1px solid rgba(0,0,0,0.08)' }}
+    >
+      <button
+        onClick={() => onChange('direct')}
+        className="px-2.5 py-1 text-[10px] font-mono transition-all"
+        style={
+          mode === 'direct'
+            ? { background: '#000', color: '#fff' }
+            : { color: 'rgba(0,0,0,0.35)' }
+        }
+      >
+        Send
+      </button>
+      <button
+        onClick={() => onChange('queue')}
+        className="px-2.5 py-1 text-[10px] font-mono transition-all"
+        style={
+          mode === 'queue'
+            ? { background: '#1B7A3D', color: '#fff' }
+            : { color: 'rgba(0,0,0,0.35)' }
+        }
+      >
+        Queue
+      </button>
+    </div>
+  )
+}
+
+function QueuePill({ onClick }: { onClick: () => void }) {
+  const { data } = useQuery({
+    queryKey: ['message-queue'],
+    queryFn: listPending,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
+    retry: 1,
+  })
+  const count = data?.length ?? 0
+  const prevCountRef = useRef(count)
+  const [pulse, setPulse] = useState(false)
+
+  useEffect(() => {
+    if (count > prevCountRef.current) {
+      setPulse(true)
+      const t = setTimeout(() => setPulse(false), 1500)
+      prevCountRef.current = count
+      return () => clearTimeout(t)
+    }
+    prevCountRef.current = count
+  }, [count])
+
+  if (count === 0) return null
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      onClick={onClick}
+      className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-mono"
+      style={{
+        background: 'rgba(27,122,61,0.08)',
+        border: '1px solid rgba(27,122,61,0.18)',
+        color: '#1B7A3D',
+      }}
+    >
+      {pulse && (
+        <motion.div
+          className="absolute inset-0 rounded-full"
+          style={{ background: 'rgba(27,122,61,0.15)' }}
+          initial={{ scale: 1, opacity: 0.8 }}
+          animate={{ scale: 1.5, opacity: 0 }}
+          transition={{ duration: 0.7 }}
+        />
+      )}
+      <Inbox className="h-3 w-3 flex-shrink-0" strokeWidth={1.75} />
+      <span>{count} queued</span>
+    </motion.button>
+  )
+}
+
+function QueueMessageRow({
+  msg,
+  onRefetch,
+}: {
+  msg: QueuedMessage
+  onRefetch: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editBody, setEditBody] = useState(msg.body)
+  const [editMaxAge, setEditMaxAge] = useState(msg.max_age_hours)
+  const [contextExpanded, setContextExpanded] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [promoting, setPromoting] = useState(false)
+
+  // Auto-reset confirm state after 3s
+  useEffect(() => {
+    if (!confirmCancel) return
+    const t = setTimeout(() => setConfirmCancel(false), 3000)
+    return () => clearTimeout(t)
+  }, [confirmCancel])
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await updateMessage(msg.id, { body: editBody, max_age_hours: editMaxAge })
+      setEditing(false)
+      onRefetch()
+    } catch {
+      // silent
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCancel() {
+    if (!confirmCancel) {
+      setConfirmCancel(true)
+      return
+    }
+    try {
+      await cancelMessage(msg.id)
+      onRefetch()
+    } catch {
+      // silent
+    }
+  }
+
+  async function handlePromote() {
+    setPromoting(true)
+    try {
+      await promoteMessage(msg.id)
+      onRefetch()
+    } catch {
+      // silent
+    } finally {
+      setPromoting(false)
+    }
+  }
+
+  const hasContext =
+    msg.context_at_queue &&
+    (msg.context_at_queue.current_work || msg.context_at_queue.active_plan)
+
+  return (
+    <div
+      className="py-4 px-5"
+      style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}
+    >
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            value={editBody}
+            onChange={e => setEditBody(e.target.value)}
+            rows={4}
+            className="w-full resize-none rounded-xl px-3 py-2.5 text-sm leading-relaxed bg-transparent outline-none"
+            style={{ border: '1px solid rgba(27,122,61,0.22)', color: '#151716' }}
+            autoFocus
+          />
+          <div className="flex items-center gap-3">
+            <label className="text-[10px] text-on-surface-muted/40 font-mono">max age (hrs)</label>
+            <input
+              type="number"
+              min={1}
+              max={168}
+              value={editMaxAge}
+              onChange={e => setEditMaxAge(Number(e.target.value))}
+              className="w-16 rounded-md px-2 py-1 text-xs text-center bg-transparent outline-none"
+              style={{ border: '1px solid rgba(0,0,0,0.10)' }}
+            />
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ color: '#1B7A3D' }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(false)
+                setEditBody(msg.body)
+                setEditMaxAge(msg.max_age_hours)
+              }}
+              className="text-xs text-on-surface-muted/40 hover:text-on-surface-muted/60 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p
+          className="text-sm leading-relaxed text-on-surface cursor-pointer hover:opacity-70 transition-opacity"
+          onClick={() => setEditing(true)}
+        >
+          {msg.body}
+        </p>
+      )}
+
+      <div className="mt-2 flex items-center gap-3 text-[11px] text-on-surface-muted/35 font-mono">
+        <span>{formatMsgAge(msg.queued_at)}</span>
+        {msg.max_age_hours && !editing && (
+          <span>· max {msg.max_age_hours}h</span>
+        )}
+      </div>
+
+      {hasContext && (
+        <div className="mt-2">
+          <button
+            onClick={() => setContextExpanded(v => !v)}
+            className="flex items-center gap-1 text-[10px] text-on-surface-muted/30 hover:text-on-surface-muted/50 font-mono transition-colors"
+          >
+            <motion.div
+              animate={{ rotate: contextExpanded ? 90 : 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            >
+              <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
+            </motion.div>
+            context at queue time
+          </button>
+          <AnimatePresence>
+            {contextExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+                className="overflow-hidden mt-1.5"
+              >
+                <div
+                  className="rounded-xl px-3 py-2.5 text-[11px] font-mono text-on-surface-muted/50 leading-relaxed space-y-1"
+                  style={{
+                    background: 'rgba(0,0,0,0.025)',
+                    border: '1px solid rgba(0,0,0,0.05)',
+                  }}
+                >
+                  {msg.context_at_queue?.current_work && (
+                    <p>
+                      <span className="text-on-surface-muted/25">work:</span>{' '}
+                      {msg.context_at_queue.current_work}
+                    </p>
+                  )}
+                  {msg.context_at_queue?.active_plan && (
+                    <p>
+                      <span className="text-on-surface-muted/25">plan:</span>{' '}
+                      {msg.context_at_queue.active_plan}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {!editing && (
+        <div className="mt-3 flex items-center gap-4">
+          <button
+            onClick={() => setEditing(true)}
+            className="text-[11px] text-on-surface-muted/40 hover:text-on-surface-muted/60 transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={handleCancel}
+            className={`text-[11px] transition-colors ${
+              confirmCancel
+                ? 'font-medium'
+                : 'text-on-surface-muted/40 hover:text-on-surface-muted/60'
+            }`}
+            style={confirmCancel ? { color: '#C25B48' } : undefined}
+          >
+            {confirmCancel ? 'Confirm cancel' : 'Cancel'}
+          </button>
+          <button
+            onClick={handlePromote}
+            disabled={promoting}
+            className="text-[11px] font-medium transition-opacity hover:opacity-70 disabled:opacity-40 ml-auto"
+            style={{ color: '#1B7A3D' }}
+          >
+            {promoting ? 'Sending…' : 'Send now'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QueueDrawer({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const { data: messages = [], isLoading } = useQuery({
+    queryKey: ['message-queue'],
+    queryFn: listPending,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+    retry: 1,
+  })
+
+  // Esc to close
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const sorted = [...messages].sort(
+    (a, b) => new Date(b.queued_at).getTime() - new Date(a.queued_at).getTime(),
+  )
+
+  const handleRefetch = () => {
+    queryClient.invalidateQueries({ queryKey: ['message-queue'] })
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-30"
+        style={{ background: 'rgba(0,0,0,0.06)' }}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+        className="fixed top-0 right-0 bottom-0 z-40 flex flex-col overflow-hidden w-full sm:w-[40vw] sm:max-w-[480px]"
+        style={{
+          background: '#F9F9F9',
+          borderLeft: '1px solid rgba(0,0,0,0.06)',
+          boxShadow: '-8px 0 32px -8px rgba(0,0,0,0.08)',
+        }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+          style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+        >
+          <div className="flex items-center gap-2">
+            <Inbox className="h-4 w-4" style={{ color: '#1B7A3D' }} strokeWidth={1.75} />
+            <span className="text-sm font-medium text-on-surface">Queue</span>
+            {messages.length > 0 && (
+              <span className="text-[11px] font-mono text-on-surface-muted/35 ml-0.5">
+                {messages.length}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-muted/40 hover:text-on-surface-muted/70 transition-colors"
+          >
+            <X className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="text-xs text-on-surface-muted/30 font-mono">loading…</span>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <Inbox className="h-8 w-8 text-on-surface-muted/15" strokeWidth={1.25} />
+              <span className="text-xs text-on-surface-muted/30 font-mono">no queued messages</span>
+            </div>
+          ) : (
+            <div>
+              {sorted.map(msg => (
+                <QueueMessageRow key={msg.id} msg={msg} onRefetch={handleRefetch} />
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </>
+  )
+}
+
 // ─── Main CCStream ──────────────────────────────────────────────────
 
 /** How many messages to show initially. Click "show earlier" to load more. */
@@ -795,6 +1209,27 @@ export default function CCStream() {
   const streamThinking = useOSSessionStore(s => s.streamThinking)
   const addUserMessage = useOSSessionStore(s => s.addUserMessage)
   const handover = useOSSessionStore(s => s.handover)
+
+  // ─── Message queue state ────────────────────────────────────────────
+  const [sendMode, setSendMode] = useState<'direct' | 'queue'>(() => {
+    try {
+      return (localStorage.getItem('eos.send_mode') as 'direct' | 'queue') || 'direct'
+    } catch {
+      return 'direct'
+    }
+  })
+  const [queueDrawerOpen, setQueueDrawerOpen] = useState(false)
+  const [queuedFlash, setQueuedFlash] = useState(false)
+  const queryClient = useQueryClient()
+
+  const handleSendModeChange = useCallback((mode: 'direct' | 'queue') => {
+    setSendMode(mode)
+    try {
+      localStorage.setItem('eos.send_mode', mode)
+    } catch {
+      // storage unavailable
+    }
+  }, [])
 
   // Only render the most recent `visibleCount` messages
   const messages = useMemo(() => {
@@ -972,7 +1407,8 @@ export default function CCStream() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (modeOverride?: 'direct' | 'queue') => {
+    const effectiveMode = modeOverride ?? sendMode
     const text = input.trim()
     if (!text && !attachments.length) return
 
@@ -1020,34 +1456,56 @@ export default function CCStream() {
     }
     fullMessage = fullMessage.trim() || `[Attached ${currentAttachments.map(a => a.name).join(', ')}]`
 
-    addUserMessage(fullMessage)
+    if (effectiveMode === 'queue') {
+      // Queue mode: POST with mode='queue', show flash, refresh pill count.
+      // Message does NOT appear in chat until it is promoted/delivered.
+      sendOSMessage(fullMessage, 'queue').then(() => {
+        setQueuedFlash(true)
+        setTimeout(() => setQueuedFlash(false), 2000)
+        queryClient.invalidateQueries({ queryKey: ['message-queue'] })
+      }).catch(() => {
+        // silent — queue request failed
+      })
+    } else {
+      // Direct mode: existing behaviour — show in chat immediately, stream response.
+      addUserMessage(fullMessage)
 
-    // Fire-and-forget: the backend returns { accepted: true } immediately.
-    // The real response streams via WebSocket (text_delta, tool_use,
-    // os-session:complete events). We only care about HTTP errors here
-    // (network down, 400 validation, 500 server crash on accept).
-    sendOSMessage(fullMessage).catch(() => {
-      // HTTP POST itself failed — server unreachable or rejected the message.
-      // This is different from a long-running session timing out.
-      const store = useOSSessionStore.getState()
-      if (store.status === 'streaming' && !store.streamText) {
-        store.finalizeResponse()
-        store.setStatus('error')
-        useOSSessionStore.setState(s => ({
-          messages: [...s.messages, {
-            id: crypto.randomUUID(),
-            role: 'assistant' as const,
-            content: 'Could not reach the server. Check your connection.',
-            timestamp: new Date(),
-          }],
-        }))
-      }
-    })
-  }, [input, addUserMessage])
+      // Fire-and-forget: the backend returns { accepted: true } immediately.
+      // The real response streams via WebSocket (text_delta, tool_use,
+      // os-session:complete events). We only care about HTTP errors here
+      // (network down, 400 validation, 500 server crash on accept).
+      sendOSMessage(fullMessage, 'direct').catch(() => {
+        // HTTP POST itself failed — server unreachable or rejected the message.
+        // This is different from a long-running session timing out.
+        const store = useOSSessionStore.getState()
+        if (store.status === 'streaming' && !store.streamText) {
+          store.finalizeResponse()
+          store.setStatus('error')
+          useOSSessionStore.setState(s => ({
+            messages: [...s.messages, {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: 'Could not reach the server. Check your connection.',
+              timestamp: new Date(),
+            }],
+          }))
+        }
+      })
+    }
+  }, [input, sendMode, attachments, addUserMessage, queryClient])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
-  }, [handleSend])
+    if (e.key === 'Enter') {
+      if (e.shiftKey) return // newline — existing behaviour
+      e.preventDefault()
+      if (e.metaKey || e.ctrlKey) {
+        // Cmd/Ctrl+Enter = force the OPPOSITE of the current toggle (one-off override)
+        handleSend(sendMode === 'direct' ? 'queue' : 'direct')
+      } else {
+        handleSend()
+      }
+    }
+  }, [handleSend, sendMode])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
@@ -1085,6 +1543,18 @@ export default function CCStream() {
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false) }}
       onDrop={async e => { e.preventDefault(); setIsDragging(false); await handleFiles(e.dataTransfer.files) }}
     >
+      {/* Queue pill — floats top-right, hidden when empty */}
+      <div className="absolute top-4 right-4 z-20 pointer-events-auto">
+        <AnimatePresence>
+          <QueuePill onClick={() => setQueueDrawerOpen(true)} />
+        </AnimatePresence>
+      </div>
+
+      {/* Queue drawer */}
+      <AnimatePresence>
+        {queueDrawerOpen && <QueueDrawer onClose={() => setQueueDrawerOpen(false)} />}
+      </AnimatePresence>
+
       {/* Drop overlay */}
       <AnimatePresence>
         {isDragging && (
@@ -1172,7 +1642,27 @@ export default function CCStream() {
 
       {/* Input area — sits near the bottom, no background, black underline */}
       <div className="w-full px-6 pb-10 pt-2 lg:px-10">
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto max-w-3xl relative">
+          {/* Queued confirmation flash */}
+          <AnimatePresence>
+            {queuedFlash && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[11px] font-mono pointer-events-none whitespace-nowrap"
+                style={{
+                  background: 'rgba(27,122,61,0.10)',
+                  border: '1px solid rgba(27,122,61,0.20)',
+                  color: '#1B7A3D',
+                }}
+              >
+                Queued
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Attachment chips */}
           <AnimatePresence>
             {attachments.length > 0 && (
@@ -1246,6 +1736,8 @@ export default function CCStream() {
               className="flex-1 resize-none bg-transparent text-sm text-on-surface placeholder-on-surface/30 outline-none leading-relaxed"
               style={{ maxHeight: 200 }}
             />
+
+            <SendModeToggle mode={sendMode} onChange={handleSendModeChange} />
 
             <div className="flex items-center gap-1">
               <AnimatePresence mode="wait">

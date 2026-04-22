@@ -5,9 +5,9 @@ import api from './client'
  * Response data streams via WebSocket, these calls just initiate/query.
  */
 
-export async function sendOSMessage(message: string) {
-  const { data } = await api.post('/os-session/message', { message })
-  return data as { accepted: boolean; status: string }
+export async function sendOSMessage(message: string, mode: 'direct' | 'queue' = 'direct') {
+  const { data } = await api.post('/os-session/message', { message, mode })
+  return data as { accepted: boolean; status: string } | { queued_id: string; queued_at: string }
 }
 
 export async function getOSStatus() {
