@@ -37,6 +37,18 @@ function setConnectionState(state: ConnectionState) {
  * Pure-ish: the only side effect is the Zustand store update.
  */
 function applyOSOutputChunk(chunk: unknown) {
+  // Wrap the whole dispatch — one bad event (malformed JSON, unexpected
+  // shape from a new SDK build, etc.) must not kill the stream handler.
+  try {
+    _applyOSOutputChunkUnsafe(chunk)
+  } catch (err) {
+    if (typeof window !== 'undefined' && window.console) {
+      window.console.warn('[useWebSocket] applyOSOutputChunk threw, dropping event', err, chunk)
+    }
+  }
+}
+
+function _applyOSOutputChunkUnsafe(chunk: unknown) {
   if (!chunk || typeof chunk !== 'object') return
   const c = chunk as Record<string, unknown>
   const osStore = useOSSessionStore.getState()
@@ -285,12 +297,30 @@ let _lastSeenEpoch: string | null = null
 let _recoverScheduled: ReturnType<typeof setTimeout> | null = null
 let _recoverInFlight = false
 let _recoverPendingSince: number | null = null
+let _recoverFailStreak = 0
+
+// Exponential backoff on repeated recover failures so a hung /recover
+// endpoint doesn't hammer the backend on a tight loop.
+const _RECOVER_BACKOFF_MS = [50, 500, 1500, 5000, 15000]
+
+function _applyRecoverEpoch(epoch: string | null | undefined) {
+  if (!epoch) return
+  // Epoch drift means the server ring buffer is a different session / process.
+  // Any lastSeenSeq we carry is from the old epoch — trying to replay against
+  // it will filter all new events out. Reset and treat the next live event as
+  // authoritative.
+  if (_lastSeenEpoch && _lastSeenEpoch !== epoch) {
+    useOSSessionStore.getState().setLastSeenSeq(null)
+  }
+  _lastSeenEpoch = epoch
+}
 
 function _scheduleRecover(sinceSeq: number) {
   if (_recoverPendingSince == null || sinceSeq < _recoverPendingSince) {
     _recoverPendingSince = sinceSeq
   }
   if (_recoverScheduled || _recoverInFlight) return
+  const delay = _RECOVER_BACKOFF_MS[Math.min(_recoverFailStreak, _RECOVER_BACKOFF_MS.length - 1)]
   _recoverScheduled = setTimeout(() => {
     _recoverScheduled = null
     const since = _recoverPendingSince
@@ -298,17 +328,26 @@ function _scheduleRecover(sinceSeq: number) {
     if (since == null) return
     _recoverInFlight = true
     recoverEventsSince(since).then(r => {
+      _recoverFailStreak = 0
+      const anyR = r as unknown as { epoch?: string }
+      _applyRecoverEpoch(anyR.epoch)
       replayRecoveredEvents(r.events)
-    }).catch(() => { /* best-effort */ }).finally(() => {
+    }).catch((err) => {
+      _recoverFailStreak++
+      if (typeof window !== 'undefined' && window.console) {
+        window.console.warn('[useWebSocket] recover failed, will retry with backoff', _recoverFailStreak, err)
+      }
+    }).finally(() => {
       _recoverInFlight = false
-      // If another gap was detected while we were in flight, fire again.
+      // If another gap was detected while we were in flight, fire again
+      // (through the same backoff schedule).
       if (_recoverPendingSince != null) {
         const next = _recoverPendingSince
         _recoverPendingSince = null
         _scheduleRecover(next)
       }
     })
-  }, 50)
+  }, delay)
 }
 
 export { applyOSOutputChunk, replayRecoveredEvents }
@@ -376,10 +415,11 @@ export function useWebSocket() {
             if (since != null) {
               setConnectionState('catching_up')
               recoverEventsSince(since).then(r => {
-                // Capture the server epoch so subsequent live events can
-                // detect a restart without false gap-fill attempts.
+                // Capture the server epoch — if it changed (PM2 restart mid-
+                // disconnect), _applyRecoverEpoch clears lastSeenSeq so the
+                // new events aren't filtered as stale.
                 const anyR = r as unknown as { epoch?: string }
-                if (anyR.epoch) _lastSeenEpoch = anyR.epoch
+                _applyRecoverEpoch(anyR.epoch)
                 replayRecoveredEvents(r.events)
                 if (r.count === 0) _legacyRecoveryFallback()
               }).catch(() => {
@@ -397,25 +437,35 @@ export function useWebSocket() {
           // Legacy recovery — the tab-close-mid-turn case where the backend
           // completed a response while we were disconnected. Only used when
           // seq-based replay didn't apply or returned no events.
+          // Reads store state FRESH at each step rather than capturing it
+          // once — otherwise in-flight live events during the async chain
+          // would be overwritten by the captured (stale) snapshot.
           function _legacyRecoveryFallback() {
-            const osStore2 = useOSSessionStore.getState()
-            if (!osStore2.lastUserMessageAt && osStore2.status !== 'streaming') return
+            const initialStore = useOSSessionStore.getState()
+            if (!initialStore.lastUserMessageAt && initialStore.status !== 'streaming') return
             import('@/api/osSession').then(({ getOSStatus, recoverResponse }) => {
               getOSStatus().then(backendStatus => {
+                const s = useOSSessionStore.getState()
                 if (backendStatus.active) {
-                  osStore2.setStatus('streaming')
+                  s.setStatus('streaming')
                 } else {
-                  const since = osStore2.lastUserMessageAt || undefined
+                  const since = s.lastUserMessageAt || undefined
                   recoverResponse(since || undefined).then(recovery => {
+                    const s2 = useOSSessionStore.getState()
                     if (recovery.found && recovery.text) {
                       useOSSessionStore.setState({ streamChunks: [], streamText: '' })
-                      osStore2.injectRecoveredResponse(recovery.text, recovery.chunks)
-                    } else if (osStore2.streamChunks.length > 0 || osStore2.streamText) {
-                      osStore2.finalizeResponse()
+                      s2.injectRecoveredResponse(recovery.text, recovery.chunks)
+                    } else if (s2.streamChunks.length > 0 || s2.streamText) {
+                      s2.finalizeResponse()
+                    } else if (s2.status === 'streaming') {
+                      // No recovery, nothing in buffers, but FE still thinks it's
+                      // streaming — backend said inactive, so force-reset the UI.
+                      s2.setStatus('idle')
                     }
                   }).catch(() => {
-                    if (osStore2.streamChunks.length > 0 || osStore2.streamText) {
-                      osStore2.finalizeResponse()
+                    const s3 = useOSSessionStore.getState()
+                    if (s3.streamChunks.length > 0 || s3.streamText) {
+                      s3.finalizeResponse()
                     }
                   })
                 }
@@ -443,10 +493,9 @@ export function useWebSocket() {
             const prevEpoch = _lastSeenEpoch
             const msgEpoch = typeof msg.epoch === 'string' ? msg.epoch : null
 
-            // Epoch change = new server session OR process restart. Clear seq
-            // state and start fresh — trying to gap-fill across an epoch
-            // change would request events from the old ring buffer that no
-            // longer exists.
+            // Epoch change = new server session OR process restart. The old
+            // lastSeenSeq is meaningless in the new ring buffer — treat this
+            // message's seq as authoritative and don't gap-fill against it.
             if (msgEpoch && prevEpoch && msgEpoch !== prevEpoch) {
               _lastSeenEpoch = msgEpoch
               osStore.setLastSeenSeq(msg.seq)
@@ -604,8 +653,37 @@ export function useWebSocket() {
                 if (osStore.status !== 'streaming') {
                   osStore.setStatus('streaming')
                 }
+                // Liveness is proof the turn is actually alive. Clear the
+                // pre-token "thinking…" pulse — the liveness row carries the
+                // signal now (phase + elapsedSec + tool name). Without this,
+                // the pulse shimmered next to the liveness indicator forever.
+                if (osStore.assistantTurnStarting) {
+                  osStore.setAssistantTurnStarting(false)
+                }
               } else {
-                osStore.setStatus(msg.status || 'idle')
+                // Normalise backend status values to the canonical FE enum.
+                // Backend emits intermediate states (compacting, handover_preparing,
+                // handover_warming, handover_complete, queued) during long-running
+                // work — the UI treats these as "still streaming" because the
+                // response isn't complete yet. compactionPhase + handover state
+                // carry the sub-signal for UI chrome.
+                const raw = msg.status as string | undefined
+                let next: 'idle' | 'streaming' | 'complete' | 'error' = 'idle'
+                if (raw === 'streaming' || raw === 'compacting' ||
+                    raw === 'handover_preparing' || raw === 'handover_warming' ||
+                    raw === 'queued') {
+                  next = 'streaming'
+                } else if (raw === 'complete' || raw === 'handover_complete') {
+                  next = 'complete'
+                } else if (raw === 'error') {
+                  next = 'error'
+                } else if (raw === 'idle') {
+                  next = 'idle'
+                } else if (raw) {
+                  // Unknown — keep the stream alive rather than silently dropping.
+                  next = osStore.status === 'streaming' ? 'streaming' : 'idle'
+                }
+                osStore.setStatus(next)
                 if (msg.sessionId) osStore.setSessionId(msg.sessionId)
               }
               break

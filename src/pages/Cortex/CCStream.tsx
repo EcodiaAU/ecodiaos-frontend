@@ -1683,10 +1683,16 @@ function QueueDrawer({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
   // WS invalidation is the primary refresh path; the poll below is a safety
   // net in case the socket drops. 30s is plenty — mutations show instantly.
+  // Pause polling when the tab is hidden so we don't hammer the backend from
+  // a background tab the user isn't looking at (and isn't getting re-rendered).
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ['message-queue'],
     queryFn: listPending,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => {
+      if (typeof document !== 'undefined' && document.hidden) return false
+      return query.state.error ? false : 30_000
+    },
+    refetchIntervalInBackground: false,
     staleTime: 20_000,
     retry: 1,
   })

@@ -188,6 +188,7 @@ let _streamTextBuffer = ''
 let _streamChunkBuffer: string[] = []
 let _streamThinkingBuffer = ''
 let _flushScheduled = false
+let _turnStartTimeout: ReturnType<typeof setTimeout> | null = null
 
 function scheduleFlush() {
   if (_flushScheduled) return
@@ -269,6 +270,18 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   setLiveness: (signal) => set({ liveness: signal }),
 
   addUserMessage: (content) => {
+    // Safety timeout: if no backend event arrives at all within 30s, clear
+    // the pre-token pulse so the UI doesn't shimmer forever against a dead
+    // backend. Real turns will have cleared it within the first few hundred
+    // ms via text_delta, tool_use_starting, thinking, or liveness.
+    if (_turnStartTimeout) clearTimeout(_turnStartTimeout)
+    _turnStartTimeout = setTimeout(() => {
+      _turnStartTimeout = null
+      const s = useOSSessionStore.getState()
+      if (s.assistantTurnStarting && !s.streamText && !s.streamThinking && s.streamTools.length === 0) {
+        useOSSessionStore.setState({ assistantTurnStarting: false })
+      }
+    }, 30_000)
     set(state => {
       // If there's an in-progress stream, snapshot it as a completed assistant message
       // before adding the user message. This preserves tools/thinking on interrupt.
@@ -336,12 +349,23 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
       // tool call. Both funnel here. If we've already tracked this toolUseId,
       // treat the repeat as a no-op — the lifecycle owns the record and will
       // update it through its preparing/running/done states.
-      //
-      // We still allow adds with NO toolUseId (legacy CLI streams that pre-
-      // date tool_use_id entirely); those can't be deduped but also only
-      // happen in paths that don't run both event types.
       if (tool.toolUseId && state.streamTools.some(t => t.toolUseId === tool.toolUseId)) {
         return state
+      }
+      // Secondary dedupe when the caller couldn't supply a toolUseId (legacy
+      // CLI streams): if a tool with the SAME name and input was just added
+      // (within 1s, still running), treat as duplicate. Prevents the double-
+      // pill rendering seen when the same tool event arrives on two code paths.
+      if (!tool.toolUseId) {
+        const now = Date.now()
+        const recentDup = state.streamTools.find(t =>
+          !t.toolUseId &&
+          t.name === tool.name &&
+          (t.input || null) === (tool.input || null) &&
+          !t.completedAt &&
+          now - t.startedAt < 1000
+        )
+        if (recentDup) return state
       }
       return {
         streamTools: [...state.streamTools, {
