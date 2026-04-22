@@ -82,7 +82,11 @@ function applyOSOutputChunk(chunk: unknown) {
   }
 
   // assistant_text: complete text from an assistant turn (no-stream fallback).
+  // Defensive: only apply when status is 'streaming'. If the turn has already
+  // finalised (status 'complete' or 'idle'), a late-arriving assistant_text
+  // would otherwise populate streamText and ghost into the NEXT turn's buffer.
   if (type === 'assistant_text' && content) {
+    if (osStore.status !== 'streaming') return
     flushStreamBuffersSync()
     const effectiveLen = getEffectiveStreamTextLength()
     if (content.length > effectiveLen) {
@@ -273,6 +277,40 @@ function replayRecoveredEvents(events: Array<{ seq: number; type: string; data?:
   }
 }
 
+// ─── Seq-epoch + debounced recovery (module-level state) ─────────────────
+// Tracks the current server epoch so we can detect restarts without false
+// gap-fill attempts. Debouncer coalesces bursts of gap detections into a
+// single recovery request so 10 missing events don't produce 10 HTTP calls.
+let _lastSeenEpoch: string | null = null
+let _recoverScheduled: ReturnType<typeof setTimeout> | null = null
+let _recoverInFlight = false
+let _recoverPendingSince: number | null = null
+
+function _scheduleRecover(sinceSeq: number) {
+  if (_recoverPendingSince == null || sinceSeq < _recoverPendingSince) {
+    _recoverPendingSince = sinceSeq
+  }
+  if (_recoverScheduled || _recoverInFlight) return
+  _recoverScheduled = setTimeout(() => {
+    _recoverScheduled = null
+    const since = _recoverPendingSince
+    _recoverPendingSince = null
+    if (since == null) return
+    _recoverInFlight = true
+    recoverEventsSince(since).then(r => {
+      replayRecoveredEvents(r.events)
+    }).catch(() => { /* best-effort */ }).finally(() => {
+      _recoverInFlight = false
+      // If another gap was detected while we were in flight, fire again.
+      if (_recoverPendingSince != null) {
+        const next = _recoverPendingSince
+        _recoverPendingSince = null
+        _scheduleRecover(next)
+      }
+    })
+  }, 50)
+}
+
 export { applyOSOutputChunk, replayRecoveredEvents }
 
 export function useWebSocket() {
@@ -305,9 +343,12 @@ export function useWebSocket() {
       setConnectionState('connecting')
 
       try {
-        const { data } = await api.post('/auth/ws-ticket')
+        // Use a prefetched ticket if available (saves ~100ms on reconnects);
+        // otherwise fetch one fresh.
+        const prefetched = _takePrefetchedTicket()
+        const ticket = prefetched ?? (await api.post('/auth/ws-ticket')).data.ticket
         const wsBase = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
-        const ws = new WebSocket(`${wsBase}/ws?ticket=${data.ticket}`)
+        const ws = new WebSocket(`${wsBase}/ws?ticket=${ticket}`)
         // Claim ownership immediately so a fast-firing onerror during the same
         // tick can't race a second connect() into existence.
         wsRef.current = ws
@@ -326,53 +367,60 @@ export function useWebSocket() {
 
           // ─── Pinnacle P1: seq-based replay on reconnect ────────────────
           // If we had a lastSeenSeq, ask the backend ring buffer for anything
-          // newer. This fills any events that fired while the WS was down. Note
-          // that lastSeenSeq is persisted (localStorage), so this also fires on
-          // fresh page loads where an old seq is known — the ring buffer is a
-          // 100-event window, so stale requests just return the current window.
+          // newer. This fills any events that fired while the WS was down. If
+          // seq replay returns events, it's authoritative — we skip the legacy
+          // recoverResponse() path which would otherwise duplicate messages.
           if (isReconnect) {
             const osStore = useOSSessionStore.getState()
             const since = osStore.lastSeenSeq
             if (since != null) {
               setConnectionState('catching_up')
               recoverEventsSince(since).then(r => {
+                // Capture the server epoch so subsequent live events can
+                // detect a restart without false gap-fill attempts.
+                const anyR = r as unknown as { epoch?: string }
+                if (anyR.epoch) _lastSeenEpoch = anyR.epoch
                 replayRecoveredEvents(r.events)
-              }).catch(() => { /* best-effort */ }).finally(() => {
+                if (r.count === 0) _legacyRecoveryFallback()
+              }).catch(() => {
+                _legacyRecoveryFallback()
+              }).finally(() => {
                 setConnectionState('connected')
               })
+            } else {
+              // Never had a seq (fresh load with persisted state but pre-P1
+              // session). Legacy recovery is the only path.
+              _legacyRecoveryFallback()
             }
           }
 
-          // Legacy recovery: response-level recover for the tab-close-mid-turn
-          // case. Runs in parallel with seq replay — they're complementary.
-          if (isReconnect) {
-            const osStore = useOSSessionStore.getState()
-            if (osStore.lastUserMessageAt || osStore.status === 'streaming') {
-              // We were streaming when we lost connection — check backend
-              import('@/api/osSession').then(({ getOSStatus, recoverResponse }) => {
-                getOSStatus().then(backendStatus => {
-                  if (backendStatus.active) {
-                    // Still going — WS will pick up from here
-                    osStore.setStatus('streaming')
-                  } else {
-                    // Completed while we were disconnected — recover
-                    const since = osStore.lastUserMessageAt || undefined
-                    recoverResponse(since || undefined).then(recovery => {
-                      if (recovery.found && recovery.text) {
-                        useOSSessionStore.setState({ streamChunks: [], streamText: '' })
-                        osStore.injectRecoveredResponse(recovery.text, recovery.chunks)
-                      } else if (osStore.streamChunks.length > 0 || osStore.streamText) {
-                        osStore.finalizeResponse()
-                      }
-                    }).catch(() => {
-                      if (osStore.streamChunks.length > 0 || osStore.streamText) {
-                        osStore.finalizeResponse()
-                      }
-                    })
-                  }
-                }).catch(() => {})
-              })
-            }
+          // Legacy recovery — the tab-close-mid-turn case where the backend
+          // completed a response while we were disconnected. Only used when
+          // seq-based replay didn't apply or returned no events.
+          function _legacyRecoveryFallback() {
+            const osStore2 = useOSSessionStore.getState()
+            if (!osStore2.lastUserMessageAt && osStore2.status !== 'streaming') return
+            import('@/api/osSession').then(({ getOSStatus, recoverResponse }) => {
+              getOSStatus().then(backendStatus => {
+                if (backendStatus.active) {
+                  osStore2.setStatus('streaming')
+                } else {
+                  const since = osStore2.lastUserMessageAt || undefined
+                  recoverResponse(since || undefined).then(recovery => {
+                    if (recovery.found && recovery.text) {
+                      useOSSessionStore.setState({ streamChunks: [], streamText: '' })
+                      osStore2.injectRecoveredResponse(recovery.text, recovery.chunks)
+                    } else if (osStore2.streamChunks.length > 0 || osStore2.streamText) {
+                      osStore2.finalizeResponse()
+                    }
+                  }).catch(() => {
+                    if (osStore2.streamChunks.length > 0 || osStore2.streamText) {
+                      osStore2.finalizeResponse()
+                    }
+                  })
+                }
+              }).catch(() => {})
+            })
           }
         }
 
@@ -392,17 +440,33 @@ export function useWebSocket() {
           if (typeof msg.seq === 'number') {
             const osStore = useOSSessionStore.getState()
             const prev = osStore.lastSeenSeq
-            // Backend resets seq to 0 when a new OS session begins. If we see
-            // seq much lower than prev, a session boundary has happened —
-            // don't treat it as a gap; just trust the new stream.
-            if (prev != null && msg.seq < prev - 10) {
+            const prevEpoch = _lastSeenEpoch
+            const msgEpoch = typeof msg.epoch === 'string' ? msg.epoch : null
+
+            // Epoch change = new server session OR process restart. Clear seq
+            // state and start fresh — trying to gap-fill across an epoch
+            // change would request events from the old ring buffer that no
+            // longer exists.
+            if (msgEpoch && prevEpoch && msgEpoch !== prevEpoch) {
+              _lastSeenEpoch = msgEpoch
+              osStore.setLastSeenSeq(msg.seq)
+            } else if (msgEpoch && !prevEpoch) {
+              _lastSeenEpoch = msgEpoch
+              // First epoch-bearing event — still treat seq as authoritative.
+              if (prev != null && msg.seq > prev + 1) {
+                _scheduleRecover(prev)
+              }
+              osStore.setLastSeenSeq(msg.seq)
+            } else if (prev != null && msg.seq < prev - 10) {
+              // Legacy path (no epoch field): large backward jump = treat as
+              // session boundary. With epochs shipped, this branch is mostly
+              // unreachable.
               osStore.setLastSeenSeq(msg.seq)
             } else if (prev != null && msg.seq > prev + 1) {
-              // Gap detected — fill it from the ring buffer. Fire and forget;
-              // the live event path will still apply msg itself below.
-              recoverEventsSince(prev).then(r => {
-                replayRecoveredEvents(r.events)
-              }).catch(() => { /* best-effort, live events keep flowing */ })
+              // Gap detected — fill it from the ring buffer. Debounced via
+              // _scheduleRecover so a burst of 10 missing events produces
+              // ONE recover call, not 10.
+              _scheduleRecover(prev)
               osStore.setLastSeenSeq(msg.seq)
             } else if (prev == null || msg.seq > prev) {
               osStore.setLastSeenSeq(msg.seq)
@@ -642,11 +706,41 @@ export function useWebSocket() {
       }
     }
 
+    // Tighter backoff than the classic 1s-doubling curve: a typical PM2
+    // restart is back in 3-5s, so we want to be trying roughly at t=0.5s,
+    // 1.5s, 3s, 5s rather than 1s, 2s, 4s, 8s. Cap at 30s eventually.
+    const BACKOFF_SCHEDULE_MS = [200, 500, 1000, 2000, 5000, 10000, 20000, 30000]
+
+    // Optimistic ticket prefetch: the WS handshake needs a single-use ticket
+    // from POST /auth/ws-ticket. Normally we fetch it inside connect(),
+    // serially with the WS open. For reconnects we can overlap the backoff
+    // wait with the ticket round-trip, shaving ~100ms off the total gap.
+    let _prefetchedTicket: { ticket: string; at: number } | null = null
+    const _prefetchTicket = () => {
+      api.post('/auth/ws-ticket').then(({ data }) => {
+        // Backend TTL is 90s; keep a 60s validity window so we always use a
+        // fresh ticket, never one that might expire mid-handshake.
+        if (mounted) _prefetchedTicket = { ticket: data.ticket, at: Date.now() }
+      }).catch(() => { /* best-effort */ })
+    }
+    const _takePrefetchedTicket = (): string | null => {
+      if (!_prefetchedTicket) return null
+      if (Date.now() - _prefetchedTicket.at > 60_000) {
+        _prefetchedTicket = null
+        return null
+      }
+      const t = _prefetchedTicket.ticket
+      _prefetchedTicket = null
+      return t
+    }
+
     function reconnect() {
       if (!mounted || reconnectScheduled) return
       reconnectScheduled = true
-      const delay = Math.min(1000 * 2 ** attempt, 30_000)
+      const delay = BACKOFF_SCHEDULE_MS[Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)]
       attempt++
+      // Start the ticket fetch now, concurrent with the backoff wait.
+      _prefetchTicket()
       setTimeout(() => {
         reconnectScheduled = false
         connect()
@@ -666,5 +760,23 @@ export function useWebSocket() {
     // them risked re-running this effect (and spawning a parallel socket) every
     // render in cases where a parent re-mount briefly broke that stability.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  // Tab-wake backpressure recovery — when the browser tab is backgrounded,
+  // the OS may throttle or pause WS message processing. On return to visible,
+  // we could be about to receive a big burst of stale deltas, all of which
+  // are already superseded by what's in the server ring buffer. Rather than
+  // process that burst, hop straight to the backend's current view via the
+  // recover endpoint — much smoother resume.
+  useEffect(() => {
+    if (!token) return
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      const since = useOSSessionStore.getState().lastSeenSeq
+      if (since == null) return
+      _scheduleRecover(since)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [token])
 }

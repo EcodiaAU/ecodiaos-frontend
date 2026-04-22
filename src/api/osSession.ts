@@ -102,6 +102,7 @@ export async function recoverEventsSince(sinceSeq: number) {
     events: Array<{
       seq: number
       ts: string
+      epoch?: string
       type: string
       sessionId?: string | null
       data?: unknown
@@ -109,6 +110,9 @@ export async function recoverEventsSince(sinceSeq: number) {
     }>
     count: number
     seq_based: true
+    /** Current server seq-epoch. Clients clear their lastSeenSeq when this
+     *  differs from the epoch on their last applied event. */
+    epoch?: string
   }
 }
 

@@ -695,42 +695,25 @@ function ThinkingBlock({ content }: { content: string }) {
 // ─── Streaming indicator — green + gold breathing ───────────────────
 
 /**
- * Throttled streaming markdown — renders markdown at ~5fps (every 200ms)
- * instead of on every rAF flush (~30fps). This is the single biggest
- * performance win: ReactMarkdown parsing + remark-gfm is expensive and
- * the visual difference between 5fps and 30fps markdown rendering is
- * imperceptible during streaming (the text is growing, not reflowing).
+ * Streaming markdown — renders on every text update. No throttle.
+ *
+ * Previously throttled to 200ms to reduce ReactMarkdown parsing overhead,
+ * but: (a) modern ReactMarkdown + remark-gfm parses a ~1KB delta in <5ms,
+ * (b) the store already rAF-batches deltas at ~60Hz, (c) the throttle
+ * added up to 200ms of "waiting to see the text I'm told just arrived"
+ * latency on top of the 20ms coalescer. The perceptible difference
+ * between throttled and unthrottled streaming is enormous — unthrottled
+ * feels like typing; throttled feels like chunks arriving.
+ *
+ * memo() keeps this a pure text-in, render-out component so React can skip
+ * the whole subtree if the text hasn't changed.
  */
 const StreamMarkdown = memo(function StreamMarkdown({ text }: { text: string }) {
-  const [rendered, setRendered] = useState('')
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const latestText = useRef(text)
-  latestText.current = text
-
-  useEffect(() => {
-    // Immediately render if this is the first text
-    if (!rendered && text) { setRendered(text); return }
-
-    // Throttle subsequent updates to 200ms
-    if (!timerRef.current) {
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null
-        setRendered(latestText.current)
-      }, 200)
-    }
-    return () => {
-      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
-    }
-  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // On unmount or when text becomes empty, flush
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
-
-  if (!rendered) return null
+  if (!text) return null
   return (
-    <MessageErrorBoundary fallbackText={rendered}>
+    <MessageErrorBoundary fallbackText={text}>
       <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{rendered}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
       </div>
     </MessageErrorBoundary>
   )
@@ -1068,7 +1051,12 @@ function InlineBanner({ banner }: { banner: InlineBannerEntry }) {
     banner.kind === 'compaction'
       ? (banner.detail === 'start' ? 'Compacting context…' : 'Compaction complete')
       : friendlyEventLabel(banner.detail)
-  const accent = isEnd ? '#1B7A3D' : '#D97706'
+  // Error-class session events (session errors, aborts, failures) need coral
+  // so they stand out from info-class events like "session resumed".
+  const isError = banner.kind === 'session_event' && isErrorSubtype(banner.detail)
+  const accent = isError ? '#C25B48'
+                 : isEnd ? '#1B7A3D'
+                 : '#D97706'
 
   return (
     <motion.div
@@ -1111,8 +1099,15 @@ function friendlyEventLabel(subtype: string): string {
     case 'session_recovered':  return 'Session recovered'
     case 'session_restarted':  return 'Session restarted'
     case 'init':               return 'Session ready'
+    case 'error':              return 'Session error'
+    case 'aborted':            return 'Session aborted'
+    case 'failed':             return 'Session failed'
     default:                   return subtype
   }
+}
+
+function isErrorSubtype(subtype: string): boolean {
+  return /^(error|aborted|failed|timeout|exhausted|rejected)/i.test(subtype)
 }
 
 /**

@@ -354,11 +354,31 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   updateStreamTool: (idOrName, patch) => {
-    set(state => ({
-      streamTools: state.streamTools.map(t =>
-        (t.toolUseId === idOrName || t.name === idOrName) ? { ...t, ...patch } : t
-      ),
-    }))
+    // Strict match by toolUseId first. If the caller passes a toolUseId that
+    // matches no tool, DO NOT fall back to name-match — two concurrent Bash
+    // calls would otherwise both receive the patch for whichever finishes first,
+    // clobbering each other. Name-match is only used as a last resort when we
+    // know the id wasn't available (legacy tool_result path without tool_use_id).
+    set(state => {
+      const idMatch = state.streamTools.some(t => t.toolUseId === idOrName)
+      return {
+        streamTools: state.streamTools.map(t => {
+          if (idMatch) {
+            return t.toolUseId === idOrName ? { ...t, ...patch } : t
+          }
+          // Fallback path: no tool has that id, so the caller was probably
+          // passing a name. Match by name, and only if exactly one tool has
+          // that name is in flight — otherwise we'd corrupt state.
+          const sameNameTools = state.streamTools.filter(
+            x => x.name === idOrName && (x.status === 'preparing' || x.status === 'running' || !x.completedAt)
+          )
+          if (sameNameTools.length === 1) {
+            return t === sameNameTools[0] ? { ...t, ...patch } : t
+          }
+          return t
+        }),
+      }
+    })
   },
 
   appendStreamThinking: (text) => {
