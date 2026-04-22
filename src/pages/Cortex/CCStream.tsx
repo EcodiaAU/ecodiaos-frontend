@@ -1121,12 +1121,16 @@ function SendModeToggle({
   )
 }
 
-function QueuePill({ onClick }: { onClick: () => void }) {
+function QueuePill({ onClick, drawerOpen }: { onClick: () => void; drawerOpen: boolean }) {
+  // WS events (message_queue:*) drive live refresh — polling is a fallback
+  // only. Pause polling entirely while the drawer is open (the drawer has its
+  // own query under the same key and will refresh faster), and back off to
+  // 2m when closed since WS keeps us honest.
   const { data } = useQuery({
     queryKey: ['message-queue'],
     queryFn: listPending,
-    refetchInterval: 30_000,
-    staleTime: 25_000,
+    refetchInterval: drawerOpen ? false : 120_000,
+    staleTime: 60_000,
     retry: 1,
   })
   const count = data?.length ?? 0
@@ -1197,9 +1201,17 @@ function QueueMessageRow({
   }, [confirmCancel])
 
   async function handleSave() {
+    // Guard the edit form client-side so we don't PATCH with a blank / NaN /
+    // absurd max_age. Backend clamps [1, 168] too, but rejecting early keeps
+    // the row visually consistent with what was typed.
+    const trimmedBody = editBody.trim()
+    if (!trimmedBody) return
+    const ageNum = Number(editMaxAge)
+    if (!Number.isFinite(ageNum) || ageNum < 1 || ageNum > 168) return
+
     setSaving(true)
     try {
-      await updateMessage(msg.id, { body: editBody, max_age_hours: editMaxAge })
+      await updateMessage(msg.id, { body: trimmedBody, max_age_hours: Math.round(ageNum) })
       setEditing(false)
       onRefetch()
     } catch {
@@ -1208,6 +1220,12 @@ function QueueMessageRow({
       setSaving(false)
     }
   }
+
+  // Derived validity flag so the Save button can dim + disable without the
+  // user submitting a blocked request.
+  const ageNum = Number(editMaxAge)
+  const saveValid = editBody.trim().length > 0 &&
+    Number.isFinite(ageNum) && ageNum >= 1 && ageNum <= 168
 
   async function handleCancel() {
     if (!confirmCancel) {
@@ -1268,9 +1286,10 @@ function QueueMessageRow({
           <div className="flex items-center gap-4">
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || !saveValid}
               className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
               style={{ color: '#1B7A3D' }}
+              title={saveValid ? undefined : 'Body required; max age must be between 1 and 168 hours'}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -1386,11 +1405,13 @@ function QueueMessageRow({
 
 function QueueDrawer({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
+  // WS invalidation is the primary refresh path; the poll below is a safety
+  // net in case the socket drops. 30s is plenty — mutations show instantly.
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ['message-queue'],
     queryFn: listPending,
-    refetchInterval: 15_000,
-    staleTime: 10_000,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
     retry: 1,
   })
 
@@ -1528,6 +1549,21 @@ export default function CCStream() {
     } catch {
       // storage unavailable
     }
+  }, [])
+
+  // Global Cmd/Ctrl+Shift+Q toggles the queue drawer.
+  // Shift avoids the macOS Cmd+Q quit shortcut that the browser can't
+  // reliably intercept. If the user is mid-edit in an input/textarea we
+  // still allow the toggle — it's a navigation action, not a text one.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'q' || e.key === 'Q')) {
+        e.preventDefault()
+        setQueueDrawerOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
   }, [])
 
   // Only render the most recent `visibleCount` messages
@@ -1854,7 +1890,7 @@ export default function CCStream() {
         {/* Message queue pill — hidden when empty. */}
         <div className="pointer-events-auto">
           <AnimatePresence>
-            <QueuePill onClick={() => setQueueDrawerOpen(true)} />
+            <QueuePill onClick={() => setQueueDrawerOpen(true)} drawerOpen={queueDrawerOpen} />
           </AnimatePresence>
         </div>
       </div>

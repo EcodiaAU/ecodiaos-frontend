@@ -605,6 +605,19 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent('ecodia:metabolic-pressure', { detail: msg.payload }))
               break
 
+            // ─── Message Queue (Tate->OS inbox) ───────────────────
+            // Any queue mutation (enqueue / deliver / cancel / promote / update
+            // / age sweep) triggers a live refetch of the drawer + pill so the
+            // user doesn't have to wait for the 15-30s poll tick.
+            case 'message_queue:enqueued':
+            case 'message_queue:delivered':
+            case 'message_queue:cancelled':
+            case 'message_queue:promoted':
+            case 'message_queue:updated':
+            case 'message_queue:swept':
+              queryClient.invalidateQueries({ queryKey: ['message-queue'] })
+              break
+
           }
         }
 
