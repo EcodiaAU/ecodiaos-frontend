@@ -387,13 +387,11 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
       })
       return
     }
-    // Graceful fallback when text never arrived. "(processing...)" looked
-    // frozen and alarming — if the OS completed a turn with only tools/thinking
-    // and no text, say so directly so the user knows the turn actually ran.
-    const finalContent = streamText
-      || (streamTools.length > 0 ? `(turn completed with ${streamTools.length} tool call${streamTools.length === 1 ? '' : 's'}, no text response)` : '')
-      || (streamThinking ? '(turn completed with thinking only, no text response)' : '')
-      || ''
+    // Finalise with the text we actually got. No placeholder copy when text
+    // is empty — the tool pills + thinking block tell the full story
+    // themselves, and narrating "the OS did N things, no text response"
+    // added noise without adding information.
+    const finalContent = streamText || ''
     set(state => ({
       messages: trimMessages([...state.messages, {
         id: crypto.randomUUID(),

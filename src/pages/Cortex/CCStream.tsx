@@ -421,15 +421,9 @@ function UserMessage({ message }: { message: OSSessionMessage }) {
 function AssistantMessage({ message }: { message: OSSessionMessage }) {
   const chunks = message.chunks ? parseStreamChunks(message.chunks) : []
   const textContent = chunks.filter(c => c.type === 'text').map(c => c.content).join('\n\n')
-  const chunkToolUses = chunks.filter(c => c.type === 'tool_use')
-  // Prefer the persisted `message.tools` list (captured live during streaming).
-  // The chunk-derived tool_uses are a fallback for older messages that pre-date
-  // tool persistence — without this, finalised messages dropped tools that were
-  // visible during streaming and the dialogue went silent on what happened.
-  const persistedTools = message.tools && message.tools.length > 0
-    ? message.tools.map(t => ({ type: 'tool_use' as const, toolName: t.name, content: t.name }))
-    : null
-  const toolUses = persistedTools || chunkToolUses
+  // Legacy tool extraction (pre-persistence messages) — name-only pills.
+  const legacyChunkTools = chunks.filter(c => c.type === 'tool_use')
+  const hasPersistedTools = !!(message.tools && message.tools.length > 0)
   const thinkingBlocks = chunks.filter(c => c.type === 'thinking')
   const thinkingFromMessage = !thinkingBlocks.length && message.thinking
     ? [{ type: 'thinking' as const, content: message.thinking }]
@@ -448,10 +442,22 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
         <ThinkingBlock key={`think-${i}`} content={t.content} />
       ))}
 
-      {/* Tool badges — futuristic neural activity pills */}
-      {toolUses.length > 0 && (
+      {/* Persisted tools — full input + result, expandable. Stacked rows, not
+          flex-wrap pills, so the one-line input summary is readable and long
+          bash commands don't squish. */}
+      {hasPersistedTools && (
+        <div className="flex flex-col gap-1.5">
+          {message.tools!.map((t, i) => (
+            <PersistedToolBlock key={`ptool-${i}`} tool={t} delay={i * 0.03} />
+          ))}
+        </div>
+      )}
+
+      {/* Legacy tool badges — only for older messages that pre-date tool
+          persistence. Kept as flex-wrap pills since we only have the name. */}
+      {!hasPersistedTools && legacyChunkTools.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {toolUses.map((t, i) => {
+          {legacyChunkTools.map((t, i) => {
             const accent = getToolAccent(t.toolName)
             return (
               <motion.div
@@ -466,7 +472,6 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
                   boxShadow: `0 2px 8px -2px ${accent.glow}, inset 0 1px 0 rgba(255,255,255,0.3)`,
                 }}
               >
-                {/* Pulse dot */}
                 <motion.div
                   className="h-1 w-1 rounded-full flex-shrink-0"
                   style={{ backgroundColor: accent.color, boxShadow: `0 0 4px ${accent.color}60` }}
@@ -499,6 +504,137 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
       {message.telemetry && <TurnTelemetryRow t={message.telemetry} />}
     </motion.div>
   )
+}
+
+/**
+ * PersistedToolBlock — one tool-call row inside a finalised assistant message.
+ * Shows the tool name + a prettified one-line input summary on the headline;
+ * expands to reveal the full input JSON + tool result. Honours the stored
+ * status (done / error) from the P1 lifecycle so failures are obvious.
+ */
+function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number }) {
+  const [expanded, setExpanded] = useState(false)
+  const accent = getToolAccent(tool.name)
+  const isError = tool.status === 'error' || tool.isError
+  const dotColor = isError ? '#C25B48' : accent.color
+  const textColor = isError ? '#C25B48cc' : `${accent.color}cc`
+  const border = isError ? 'rgba(194,91,72,0.22)' : `${accent.color}15`
+  const bg = isError
+    ? 'linear-gradient(135deg, rgba(194,91,72,0.05), rgba(194,91,72,0.02))'
+    : `linear-gradient(135deg, ${accent.color}08, ${accent.color}04)`
+
+  const summary = toolSummaryLine(tool.name, tool.input)
+  const resultSummary = toolResultSummary(tool.result)
+  // Expandable when we have anything richer than the summary to reveal.
+  const hasDetail =
+    (tool.input != null && String(tool.input).length > 0) ||
+    (tool.result != null && String(tool.result).length > 0)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 100, damping: 18, delay }}
+      layout
+      className="rounded-xl overflow-hidden"
+      style={{ background: bg, border: `1px solid ${border}` }}
+    >
+      <button
+        type="button"
+        onClick={() => hasDetail && setExpanded(v => !v)}
+        className="flex w-full items-start gap-2 px-3 py-2 text-left"
+        style={{ cursor: hasDetail ? 'pointer' : 'default' }}
+      >
+        {isError ? (
+          <AlertTriangle className="h-3 w-3 flex-shrink-0 mt-1" style={{ color: dotColor }} strokeWidth={2} />
+        ) : (
+          <div
+            className="h-1 w-1 rounded-full flex-shrink-0 mt-[7px]"
+            style={{ backgroundColor: dotColor, boxShadow: `0 0 4px ${dotColor}60` }}
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[11px] font-mono tracking-wide font-semibold" style={{ color: textColor }}>
+              {friendlyToolName(tool.name)}
+            </span>
+            {summary && (
+              <span className="text-[11px] font-mono text-on-surface-muted/55 truncate">
+                {summary}
+              </span>
+            )}
+          </div>
+          {!expanded && resultSummary && (
+            <div className="mt-1 text-[10px] font-mono text-on-surface-muted/35 truncate">
+              → {resultSummary}
+            </div>
+          )}
+        </div>
+        {hasDetail && (
+          <motion.div
+            animate={{ rotate: expanded ? 90 : 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="mt-1 flex-shrink-0"
+          >
+            <ChevronRight className="h-3 w-3 text-on-surface-muted/30" strokeWidth={2} />
+          </motion.div>
+        )}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="border-t px-3 py-2.5 space-y-2"
+              style={{ borderColor: border }}
+            >
+              {tool.input != null && String(tool.input).length > 0 && (
+                <div>
+                  <div className="text-[9px] font-mono uppercase tracking-wider text-on-surface-muted/30 mb-1">
+                    input
+                  </div>
+                  <pre
+                    className="text-[11px] font-mono text-on-surface-muted/70 leading-relaxed whitespace-pre-wrap break-words m-0"
+                    style={{ background: 'rgba(0,0,0,0.025)', padding: '8px 10px', borderRadius: 8 }}
+                  >{formatToolInputForDisplay(tool.input)}</pre>
+                </div>
+              )}
+              {tool.result != null && String(tool.result).length > 0 && (
+                <div>
+                  <div className="text-[9px] font-mono uppercase tracking-wider text-on-surface-muted/30 mb-1">
+                    {isError ? 'error' : 'result'}
+                  </div>
+                  <pre
+                    className="text-[11px] font-mono text-on-surface-muted/70 leading-relaxed whitespace-pre-wrap break-words m-0 max-h-64 overflow-y-auto"
+                    style={{ background: 'rgba(0,0,0,0.025)', padding: '8px 10px', borderRadius: 8 }}
+                  >{tool.result}</pre>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
+
+/** Pretty-print a raw tool input for the expanded panel. JSON gets 2-space
+ *  indent; plain strings pass through. */
+function formatToolInputForDisplay(raw: unknown): string {
+  if (raw == null) return ''
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return JSON.stringify(parsed, null, 2)
+    } catch { return raw }
+  }
+  try { return JSON.stringify(raw, null, 2) } catch { return String(raw) }
 }
 
 function ThinkingBlock({ content }: { content: string }) {
@@ -585,6 +721,111 @@ function friendlyToolName(raw: string) {
 }
 
 /**
+ * Parse the raw input into a plain object (best-effort). Tool inputs come in
+ * as either a JSON-stringified object or a plain string depending on where in
+ * the lifecycle they were captured.
+ */
+function parseToolInput(raw: unknown): unknown {
+  if (raw == null) return null
+  if (typeof raw !== 'string') return raw
+  try { return JSON.parse(raw) } catch { return raw }
+}
+
+/**
+ * Truncate a single-line string for summary display. Preserves the head and
+ * tail so file paths / long commands still show the meaningful ends.
+ */
+function truncateMiddle(s: string, max: number): string {
+  if (s.length <= max) return s
+  const side = Math.floor((max - 1) / 2)
+  return `${s.slice(0, side)}…${s.slice(-side)}`
+}
+
+/**
+ * Tool summary — a short, prettified one-line description of what the tool
+ * was asked to do. The full raw input is still shown on expand; this is just
+ * the readable headline that replaces the bare tool name.
+ *
+ * Returns null when no useful summary is available — callers should fall back
+ * to the friendly tool name alone in that case.
+ */
+function toolSummaryLine(rawName: string, rawInput: unknown): string | null {
+  const input = parseToolInput(rawInput)
+  const name = friendlyToolName(rawName)
+  if (input == null) return null
+
+  // Plain-string inputs: show a truncated form.
+  if (typeof input === 'string') return truncateMiddle(input.replace(/\s+/g, ' ').trim(), 80)
+  if (typeof input !== 'object') return String(input)
+
+  const i = input as Record<string, unknown>
+  const s = (k: string): string | null => {
+    const v = i[k]
+    return typeof v === 'string' ? v : null
+  }
+
+  // Bash — `$ <command>` head-truncated to 80 chars so the whole visible line
+  // is the command itself, not the field names around it.
+  if (name === 'Bash' && s('command')) {
+    return `$ ${truncateMiddle(s('command')!.replace(/\s+/g, ' ').trim(), 78)}`
+  }
+  // File operations.
+  if ((name === 'Read' || name === 'Write') && s('file_path')) {
+    return s('file_path')!
+  }
+  if (name === 'Edit' && s('file_path')) {
+    const old = s('old_string')
+    return old
+      ? `${s('file_path')} — ${truncateMiddle(old.replace(/\s+/g, ' ').trim(), 40)}`
+      : s('file_path')!
+  }
+  // Search / glob.
+  if (name === 'Glob' && s('pattern')) return s('pattern')!
+  if (name === 'Grep' && s('pattern')) {
+    const path = s('path')
+    return path ? `${s('pattern')} in ${path}` : s('pattern')!
+  }
+  // Neo4j / Cypher / graph queries.
+  if ((name === 'graph_query' || name === 'cypher' || name === 'query') && (s('query') || s('cypher'))) {
+    const q = (s('query') || s('cypher'))!.replace(/\s+/g, ' ').trim()
+    return truncateMiddle(q, 80)
+  }
+  // Web fetches.
+  if (name === 'WebFetch' && s('url')) return s('url')!
+  if (name === 'WebSearch' && s('query')) return s('query')!
+
+  // Generic fallback: show the first string-valued field with its key.
+  for (const [k, v] of Object.entries(i)) {
+    if (typeof v === 'string' && v.length > 0) {
+      return `${k}: ${truncateMiddle(v.replace(/\s+/g, ' ').trim(), 70)}`
+    }
+  }
+  // Last-ditch: stringify the whole object, truncated.
+  try { return truncateMiddle(JSON.stringify(input), 80) } catch { return null }
+}
+
+/**
+ * Result summary — a compact one-line description of the tool's output for
+ * the collapsed pill. Long outputs get truncated; the full result is shown
+ * when the pill is expanded.
+ */
+function toolResultSummary(result: string | undefined | null): string | null {
+  if (!result) return null
+  const compact = result.replace(/\s+/g, ' ').trim()
+  if (!compact) return null
+  // Try to parse as JSON so we can collapse it onto one line if it's a small
+  // object — otherwise treat as plain text.
+  try {
+    const parsed = JSON.parse(result)
+    if (parsed && typeof parsed === 'object') {
+      const flat = JSON.stringify(parsed)
+      return truncateMiddle(flat, 80)
+    }
+  } catch { /* fall through to plain-text handling */ }
+  return truncateMiddle(compact, 80)
+}
+
+/**
  * Live tool activity feed — shows what the OS is doing right now.
  * Pinnacle P1: renders the full tool lifecycle — 'preparing' (input
  * streaming in), 'running' (tool called, awaiting result), 'done', and
@@ -621,6 +862,9 @@ function LiveToolFeed({ tools }: { tools: LiveToolCall[] }) {
  * ToolLifecyclePill — one tool's lifecycle: preparing → running → done/error.
  * Dot animation and colour reflect current status; text colour dims when
  * complete. Name uses `friendlyToolName` (strips mcp__server__ prefix).
+ * When the tool's input has arrived, also shows a prettified one-line summary
+ * (e.g. `Bash · $ git status`) so you can see *what* is being done, not just
+ * *which* tool.
  */
 function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
   // Derive status from explicit field (Pinnacle P1) or from completedAt (legacy).
@@ -638,19 +882,25 @@ function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
   const textColor = status === 'error'
     ? `${errorColor}cc`
     : isActive ? `${accent.color}cc` : `${accent.color}66`
+  const summaryColor = status === 'error'
+    ? `${errorColor}99`
+    : isActive ? 'rgba(0,0,0,0.42)' : 'rgba(0,0,0,0.30)'
   const elapsedOpacity = status === 'error' ? 'text-on-surface-muted/25' : 'text-on-surface-muted/20'
 
   // Status suffix — surfaces 'preparing' so the pre-input state is visible.
-  const statusSuffix = status === 'preparing' ? ' · preparing'
-                     : status === 'error'     ? ' · failed'
-                     : null
+  // No suffix for 'running' and 'done' (clean) or 'error' (handled by icon).
+  const statusSuffix = status === 'preparing' ? ' · preparing' : null
+
+  // Prettified summary of the input (e.g. `$ git status` for Bash). Only once
+  // the input has arrived — during 'preparing' it's intentionally absent.
+  const summary = status === 'preparing' ? null : toolSummaryLine(t.name, t.input)
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: isActive ? 1 : 0.55, x: 0 }}
       transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-      className="flex items-center gap-2"
+      className="flex items-center gap-2 min-w-0"
     >
       {/* Dot — pulses while active, static when terminal */}
       {isActive ? (
@@ -665,11 +915,20 @@ function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
       ) : (
         <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor, opacity: 0.3 }} />
       )}
-      <span className="text-[11px] font-mono tracking-wide" style={{ color: textColor }}>
+      <span className="text-[11px] font-mono tracking-wide flex-shrink-0" style={{ color: textColor }}>
         {friendlyToolName(t.name)}
         {statusSuffix && <span className="opacity-70">{statusSuffix}</span>}
       </span>
-      <span className={`text-[10px] font-mono ${elapsedOpacity}`}>
+      {summary && (
+        <span
+          className="text-[11px] font-mono truncate min-w-0"
+          style={{ color: summaryColor }}
+          title={summary}
+        >
+          · {summary}
+        </span>
+      )}
+      <span className={`text-[10px] font-mono flex-shrink-0 ml-auto ${elapsedOpacity}`}>
         {elapsed}s
       </span>
     </motion.div>
