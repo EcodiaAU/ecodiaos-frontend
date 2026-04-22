@@ -18,7 +18,7 @@ import {
   Mail, DollarSign, Zap, Activity,
   GitBranch, TrendingUp, Download,
   Paperclip, FileText, X, Trash2, Image as ImageIcon, Square,
-  Inbox, ChevronRight,
+  Inbox, ChevronRight, ArrowDown,
   AlertTriangle, Wifi, WifiOff, Loader2,
 } from 'lucide-react'
 // SpatialLayer removed from input area to fix jitter
@@ -1801,6 +1801,10 @@ export default function CCStream() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
+  // Mirror of userScrolledUp in state so the jump-to-latest button can mount
+  // reactively. The ref is still the source of truth for the scroll logic
+  // (avoids re-running the scroll effects on every pixel change).
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const allMessages = useOSSessionStore(s => s.messages)
   const status = useOSSessionStore(s => s.status)
   const streamText = useOSSessionStore(s => s.streamText)
@@ -1870,13 +1874,22 @@ export default function CCStream() {
     await handleFiles(files)
   }, [handleFiles])
 
-  // Track whether user has scrolled away from bottom
+  // Track whether user has scrolled away from bottom.
+  // 200px threshold (was 80) — an inline code block can push content past 80px
+  // without the user intending to disengage, and locking auto-scroll there
+  // made the chat look frozen mid-stream.
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    let lastShow = false
     const onScroll = () => {
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      userScrolledUp.current = distFromBottom > 80
+      const scrolledUp = distFromBottom > 200
+      userScrolledUp.current = scrolledUp
+      if (scrolledUp !== lastShow) {
+        lastShow = scrolledUp
+        setShowJumpToLatest(scrolledUp)
+      }
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
@@ -1890,16 +1903,20 @@ export default function CCStream() {
     }
   }, [messages, status])
 
-  // Throttled auto-scroll during streaming — keeps up with text without
-  // queuing dozens of smooth-scroll animations per second.
+  // Throttled auto-scroll during streaming. Uses a manual scrollTop adjust
+  // rather than scrollIntoView+'instant' so we avoid the jarring mode-switch
+  // between "smooth" (new message / status change) and "instant" (stream).
+  // A 300ms interval is snappy enough that text stays in view, and the manual
+  // delta write is effectively instantaneous so no animation queue builds up.
   const streamScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => {
     if (status === 'streaming') {
       streamScrollTimer.current = setInterval(() => {
-        if (!userScrolledUp.current) {
-          chatEndRef.current?.scrollIntoView({ behavior: 'instant' })
+        if (!userScrolledUp.current && scrollRef.current) {
+          const el = scrollRef.current
+          el.scrollTop = el.scrollHeight
         }
-      }, 250) // 4x/sec is plenty smooth for following text
+      }, 300)
     } else {
       if (streamScrollTimer.current) {
         clearInterval(streamScrollTimer.current)
@@ -2076,12 +2093,24 @@ export default function CCStream() {
     if (effectiveMode === 'queue') {
       // Queue mode: POST with mode='queue', show flash, refresh pill count.
       // Message does NOT appear in chat until it is promoted/delivered.
+      // Show the flash optimistically — the POST is a 50-300ms round trip and
+      // without this, the input clears and then there's dead air before the
+      // "Queued" confirmation appears, which felt like the send had failed.
+      setQueuedFlash(true)
       sendOSMessage(fullMessage, 'queue').then(() => {
-        setQueuedFlash(true)
-        setTimeout(() => setQueuedFlash(false), 2000)
         queryClient.invalidateQueries({ queryKey: ['message-queue'] })
+        setTimeout(() => setQueuedFlash(false), 1800)
       }).catch(() => {
-        // silent — queue request failed
+        // POST failed — retract the optimistic flash and surface the error.
+        setQueuedFlash(false)
+        useOSSessionStore.setState(s => ({
+          messages: [...s.messages, {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: 'Queue request failed — backend unreachable. Message not saved.',
+            timestamp: new Date(),
+          }],
+        }))
       })
     } else {
       // Direct mode: existing behaviour — show in chat immediately, stream response.
@@ -2135,7 +2164,9 @@ export default function CCStream() {
     })
   }, [])
 
+  const [abortPending, setAbortPending] = useState(false)
   const handleAbort = useCallback(async () => {
+    setAbortPending(true)
     try {
       await abortOS()
     } catch {}
@@ -2144,6 +2175,7 @@ export default function CCStream() {
     if (store.status === 'streaming') {
       store.finalizeResponse()
     }
+    setAbortPending(false)
   }, [])
 
   const handleRestart = useCallback(async () => {
@@ -2273,6 +2305,35 @@ export default function CCStream() {
         </div>
       </div>
 
+      {/* Jump-to-latest affordance — only shown when the user has scrolled up
+          past the 200px threshold. Without it, auto-scroll silently disengages
+          and the chat appears frozen mid-stream. */}
+      <AnimatePresence>
+        {showJumpToLatest && (
+          <motion.button
+            key="jump-to-latest"
+            type="button"
+            onClick={() => {
+              userScrolledUp.current = false
+              setShowJumpToLatest(false)
+              chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+            className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-mono shadow-sm hover:shadow-md transition-shadow"
+            style={{
+              background: 'rgba(20,20,20,0.92)',
+              color: 'rgba(255,255,255,0.92)',
+            }}
+          >
+            <ArrowDown className="h-3 w-3" strokeWidth={2} />
+            Latest
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Input area — sits near the bottom, no background, black underline */}
       <div className="w-full px-6 pb-10 pt-2 lg:px-10">
         <div className="mx-auto max-w-3xl relative">
@@ -2382,10 +2443,13 @@ export default function CCStream() {
                     exit={{ opacity: 0, scale: 0.8 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                     onClick={handleAbort}
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-black text-white hover:bg-black/70 transition-colors"
-                    title="Stop"
+                    disabled={abortPending}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-black text-white hover:bg-black/70 transition-colors disabled:opacity-60"
+                    title={abortPending ? 'Stopping…' : 'Stop'}
                   >
-                    <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />
+                    {abortPending
+                      ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
+                      : <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />}
                   </motion.button>
                 ) : messages.length > 0 ? (
                   <motion.button
