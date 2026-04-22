@@ -330,13 +330,27 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   addStreamTool: (tool) => {
-    set(state => ({
-      streamTools: [...state.streamTools, {
-        id: crypto.randomUUID(),
-        startedAt: Date.now(),
-        ...tool,
-      }],
-    }))
+    set(state => {
+      // Idempotent by toolUseId: the backend emits both a new lifecycle event
+      // (tool_use_starting) AND a legacy bulk event (tool_use) for the same
+      // tool call. Both funnel here. If we've already tracked this toolUseId,
+      // treat the repeat as a no-op — the lifecycle owns the record and will
+      // update it through its preparing/running/done states.
+      //
+      // We still allow adds with NO toolUseId (legacy CLI streams that pre-
+      // date tool_use_id entirely); those can't be deduped but also only
+      // happen in paths that don't run both event types.
+      if (tool.toolUseId && state.streamTools.some(t => t.toolUseId === tool.toolUseId)) {
+        return state
+      }
+      return {
+        streamTools: [...state.streamTools, {
+          id: crypto.randomUUID(),
+          startedAt: Date.now(),
+          ...tool,
+        }],
+      }
+    })
   },
 
   updateStreamTool: (idOrName, patch) => {
