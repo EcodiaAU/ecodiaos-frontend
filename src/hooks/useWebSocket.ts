@@ -462,14 +462,23 @@ export function useWebSocket() {
                       // streaming — backend said inactive, so force-reset the UI.
                       s2.setStatus('idle')
                     }
-                  }).catch(() => {
+                  }).catch((err) => {
+                    if (typeof window !== 'undefined' && window.console) {
+                      window.console.warn('[useWebSocket] recoverResponse failed in legacy fallback', err)
+                    }
                     const s3 = useOSSessionStore.getState()
                     if (s3.streamChunks.length > 0 || s3.streamText) {
                       s3.finalizeResponse()
                     }
                   })
                 }
-              }).catch(() => {})
+              }).catch((err) => {
+                // getOSStatus failed — backend is likely unreachable. Log so
+                // we can diagnose the "stuck streaming spinner" class of bug.
+                if (typeof window !== 'undefined' && window.console) {
+                  window.console.warn('[useWebSocket] getOSStatus failed in legacy fallback', err)
+                }
+              })
             })
           }
         }
@@ -563,7 +572,7 @@ export function useWebSocket() {
               break
             }
 
-            // ─── CC Pipeline Result (was dead — now handled) ──────
+            // ─── CC Pipeline Result ──────────────────────────────
             case 'cc:pipeline_result': {
               const result = msg.data ?? msg.payload
               const statusUpdate = {
@@ -585,7 +594,7 @@ export function useWebSocket() {
               break
             }
 
-            // ─── CC Session Created (was dead — now handled) ──────
+            // ─── CC Session Created ─────────────────────────────
             case 'cc:session_created': {
               const session = msg.data ?? msg.payload
               if (session?.id) {
@@ -617,7 +626,7 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent('ecodia:action-queue-update', { detail: msg }))
               break
 
-            // ─── Action Queue Expired (was dead — now handled) ────
+            // ─── Action Queue Expired ───────────────────────────
             case 'action_queue:expired':
               queryClient.invalidateQueries({ queryKey: ['pendingActions'] })
               queryClient.invalidateQueries({ queryKey: ['actionStats'] })
@@ -752,8 +761,22 @@ export function useWebSocket() {
             // Any queue mutation (enqueue / deliver / cancel / promote / update
             // / age sweep) triggers a live refetch of the drawer + pill so the
             // user doesn't have to wait for the 15-30s poll tick.
+            case 'message_queue:delivered': {
+              queryClient.invalidateQueries({ queryKey: ['message-queue'] })
+              // Render each delivered queued message as its own user card.
+              // Without this, the drawer pills vanish with no trace in the
+              // chat timeline — user has no idea what actually got sent.
+              if (Array.isArray(msg.bodies)) {
+                const osStore = useOSSessionStore.getState()
+                for (const body of msg.bodies) {
+                  if (typeof body === 'string' && body.trim()) {
+                    osStore.addDeliveredQueueMessage(body)
+                  }
+                }
+              }
+              break
+            }
             case 'message_queue:enqueued':
-            case 'message_queue:delivered':
             case 'message_queue:cancelled':
             case 'message_queue:promoted':
             case 'message_queue:updated':

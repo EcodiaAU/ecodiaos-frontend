@@ -168,6 +168,11 @@ interface OSSessionStore {
   dismissInlineBanner: (id: string) => void
   setCompactionPhase: (p: 'idle' | 'active') => void
   setLastSeenSeq: (seq: number | null) => void
+  /** Render a delivered queued message as a user card without disrupting any
+   *  in-flight stream state (status, streamText, buffers). Used when the
+   *  backend auto-delivers queue messages — we want them visible in the chat
+   *  timeline but not treated as a fresh user turn. */
+  addDeliveredQueueMessage: (content: string) => void
 }
 
 /** Max messages to keep in memory/localStorage. Older messages are trimmed on add. */
@@ -538,6 +543,22 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   setCompactionPhase: (p) => set({ compactionPhase: p }),
 
   setLastSeenSeq: (seq) => set({ lastSeenSeq: seq }),
+
+  addDeliveredQueueMessage: (content) => {
+    if (!content) return
+    set(state => ({
+      messages: trimMessages([
+        ...state.messages,
+        {
+          id: crypto.randomUUID(),
+          role: 'user' as const,
+          content,
+          timestamp: new Date(),
+        },
+      ]),
+      lastUserMessageAt: new Date().toISOString(),
+    }))
+  },
 }),
 {
   name: 'os-session-chat',

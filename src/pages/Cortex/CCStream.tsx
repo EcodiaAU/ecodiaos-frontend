@@ -21,7 +21,6 @@ import {
   Inbox, ChevronRight, ArrowDown,
   AlertTriangle, Wifi, WifiOff, Loader2,
 } from 'lucide-react'
-// SpatialLayer removed from input area to fix jitter
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
