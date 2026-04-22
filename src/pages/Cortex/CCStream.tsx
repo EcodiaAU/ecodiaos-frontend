@@ -27,6 +27,7 @@ import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
 import { MessageErrorBoundary } from '@/components/shared/MessageErrorBoundary'
 import { useOSSessionStore, type OSSessionMessage, type LiveToolCall, type TurnTelemetry, type InlineBannerEntry } from '@/store/osSessionStore'
+import { useConnectionStore } from '@/store/connectionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
 import { listPending, cancelMessage, promoteMessage, updateMessage } from '@/api/messageQueue'
 import type { QueuedMessage } from '@/api/messageQueue'
@@ -559,14 +560,21 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
               {friendlyToolName(tool.name)}
             </span>
             {summary && (
-              <span className="text-[11px] font-mono text-on-surface-muted/55 truncate">
+              <span
+                className="text-[11px] font-mono truncate"
+                style={{ color: 'rgba(21,23,22,0.85)' }}
+              >
                 {summary}
               </span>
             )}
           </div>
           {!expanded && resultSummary && (
-            <div className="mt-1 text-[10px] font-mono text-on-surface-muted/35 truncate">
-              → {resultSummary}
+            <div
+              className="mt-1 text-[11px] font-mono truncate flex items-center gap-1.5"
+              style={{ color: 'rgba(21,23,22,0.62)' }}
+            >
+              <span style={{ color: 'rgba(21,23,22,0.35)' }}>→</span>
+              <span className="truncate">{resultSummary}</span>
             </div>
           )}
         </div>
@@ -576,7 +584,11 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
             className="mt-1 flex-shrink-0"
           >
-            <ChevronRight className="h-3 w-3 text-on-surface-muted/30" strokeWidth={2} />
+            <ChevronRight
+              className="h-3 w-3"
+              style={{ color: 'rgba(21,23,22,0.50)' }}
+              strokeWidth={2}
+            />
           </motion.div>
         )}
       </button>
@@ -591,28 +603,46 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
             className="overflow-hidden"
           >
             <div
-              className="border-t px-3 py-2.5 space-y-2"
+              className="border-t px-3 py-2.5 space-y-2.5"
               style={{ borderColor: border }}
             >
               {tool.input != null && String(tool.input).length > 0 && (
                 <div>
-                  <div className="text-[9px] font-mono uppercase tracking-wider text-on-surface-muted/30 mb-1">
+                  <div
+                    className="text-[10px] font-mono uppercase tracking-wider mb-1.5 font-semibold"
+                    style={{ color: 'rgba(21,23,22,0.55)' }}
+                  >
                     input
                   </div>
                   <pre
-                    className="text-[11px] font-mono text-on-surface-muted/70 leading-relaxed whitespace-pre-wrap break-words m-0"
-                    style={{ background: 'rgba(0,0,0,0.025)', padding: '8px 10px', borderRadius: 8 }}
+                    className="text-[12px] font-mono leading-relaxed whitespace-pre-wrap break-words m-0"
+                    style={{
+                      background: 'rgba(0,0,0,0.045)',
+                      color: '#151716',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(0,0,0,0.05)',
+                    }}
                   >{formatToolInputForDisplay(tool.input)}</pre>
                 </div>
               )}
               {tool.result != null && String(tool.result).length > 0 && (
                 <div>
-                  <div className="text-[9px] font-mono uppercase tracking-wider text-on-surface-muted/30 mb-1">
+                  <div
+                    className="text-[10px] font-mono uppercase tracking-wider mb-1.5 font-semibold"
+                    style={{ color: isError ? '#C25B48' : 'rgba(21,23,22,0.55)' }}
+                  >
                     {isError ? 'error' : 'result'}
                   </div>
                   <pre
-                    className="text-[11px] font-mono text-on-surface-muted/70 leading-relaxed whitespace-pre-wrap break-words m-0 max-h-64 overflow-y-auto"
-                    style={{ background: 'rgba(0,0,0,0.025)', padding: '8px 10px', borderRadius: 8 }}
+                    className="text-[12px] font-mono leading-relaxed whitespace-pre-wrap break-words m-0 max-h-64 overflow-y-auto"
+                    style={{
+                      background: isError ? 'rgba(194,91,72,0.06)' : 'rgba(0,0,0,0.045)',
+                      color: '#151716',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${isError ? 'rgba(194,91,72,0.15)' : 'rgba(0,0,0,0.05)'}`,
+                    }}
                   >{tool.result}</pre>
                 </div>
               )}
@@ -883,8 +913,8 @@ function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
     ? `${errorColor}cc`
     : isActive ? `${accent.color}cc` : `${accent.color}66`
   const summaryColor = status === 'error'
-    ? `${errorColor}99`
-    : isActive ? 'rgba(0,0,0,0.42)' : 'rgba(0,0,0,0.30)'
+    ? `${errorColor}cc`
+    : isActive ? 'rgba(21,23,22,0.80)' : 'rgba(21,23,22,0.55)'
   const elapsedOpacity = status === 'error' ? 'text-on-surface-muted/25' : 'text-on-surface-muted/20'
 
   // Status suffix — surfaces 'preparing' so the pre-input state is visible.
@@ -1130,20 +1160,12 @@ function InlineBannerStack() {
 
 /**
  * ConnectionStateIndicator — always-visible pill in the chrome showing the
- * underlying WS state. Drives from the 'ecodia:connection-state' CustomEvent
- * dispatched by useWebSocket.
+ * underlying WS state. Subscribes to useConnectionStore so it displays the
+ * correct state regardless of when it mounts (CustomEvent-only would miss the
+ * `connected` fired before this component is in the tree).
  */
 function ConnectionStateIndicator() {
-  const [state, setState] = useState<'connected' | 'connecting' | 'reconnecting' | 'catching_up' | 'disconnected' | 'backend_alive'>('connecting')
-
-  useEffect(() => {
-    const onState = (e: Event) => {
-      const d = (e as CustomEvent).detail as typeof state
-      if (d) setState(d)
-    }
-    window.addEventListener('ecodia:connection-state', onState)
-    return () => window.removeEventListener('ecodia:connection-state', onState)
-  }, [])
+  const state = useConnectionStore(s => s.state)
 
   // Connected and quiet — show a minimal dot, don't clutter.
   if (state === 'connected') {

@@ -5,6 +5,7 @@ import { useNotificationStore } from '@/store/notificationStore'
 import { useCortexStore } from '@/store/cortexStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useOSSessionStore, getEffectiveStreamTextLength, flushStreamBuffersSync } from '@/store/osSessionStore'
+import { useConnectionStore, type ConnectionState } from '@/store/connectionStore'
 import type { CCSession } from '@/types/claudeCode'
 import api from '@/api/client'
 import { recoverEventsSince } from '@/api/osSession'
@@ -21,11 +22,11 @@ import { recoverEventsSince } from '@/api/osSession'
  *   disconnected — WS dropped and HTTP status poll also failed (hard offline).
  *   backend_alive — WS down, HTTP status poll confirms backend is working.
  */
-type ConnectionState =
-  | 'connected' | 'connecting' | 'reconnecting'
-  | 'catching_up' | 'disconnected' | 'backend_alive'
-
 function setConnectionState(state: ConnectionState) {
+  // Store is the source of truth for components that subscribe directly
+  // (e.g. ConnectionStateIndicator). The CustomEvent stays for any callers
+  // outside React that want a pub/sub style signal.
+  useConnectionStore.getState().setState(state)
   window.dispatchEvent(new CustomEvent('ecodia:connection-state', { detail: state }))
 }
 
