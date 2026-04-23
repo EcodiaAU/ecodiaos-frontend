@@ -963,22 +963,18 @@ function ThinkingIndicator({ visible }: { visible: boolean }) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -2 }}
           transition={{ type: 'spring', stiffness: 160, damping: 22 }}
-          className="flex items-center gap-2 py-2 px-3 rounded-xl self-start"
-          style={{
-            background: 'linear-gradient(135deg, rgba(27,122,61,0.05), rgba(46,204,113,0.02))',
-            border: '1px solid rgba(27,122,61,0.10)',
-          }}
+          className="flex items-center gap-2 py-2 px-1 self-start"
         >
           {STREAM_DOTS.map((dot, i) => (
             <motion.div
               key={i}
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: dot.color, boxShadow: `0 0 6px ${dot.color}50` }}
-              animate={{ scale: [0.8, 1.4, 0.8], opacity: [0.3, 0.9, 0.3] }}
+              className="h-1 w-1 rounded-full"
+              style={{ backgroundColor: dot.color }}
+              animate={{ opacity: [0.2, 0.7, 0.2] }}
               transition={{ duration: 1.5, repeat: Infinity, delay: dot.delay, ease: 'easeInOut' }}
             />
           ))}
-          <span className="text-[11px] font-mono tracking-wide text-on-surface-muted/50 ml-1">
+          <span className="text-[11px] font-mono tracking-wide text-on-surface-muted/40 ml-1">
             thinking
           </span>
         </motion.div>
@@ -1126,7 +1122,7 @@ function InlineBannerStack() {
         (b.kind === 'compaction' && b.detail === 'end') ||
         b.kind === 'session_event'
       if (isTransient) {
-        timers.push(setTimeout(() => dismiss(b.id), 4000))
+        timers.push(setTimeout(() => dismiss(b.id), 3000))
       }
     }
     return () => { for (const t of timers) clearTimeout(t) }
@@ -1161,12 +1157,14 @@ function InlineBannerStack() {
 function ConnectionStateIndicator() {
   const state = useConnectionStore(s => s.state)
 
-  // Connected and quiet — show a minimal dot, don't clutter.
+  // Connected and quiet — nearly invisible dot, no glow. Only draws the eye
+  // when it changes to a non-green state (where chrome becomes intentionally
+  // louder to signal the degradation).
   if (state === 'connected') {
     return (
       <div
-        className="h-1.5 w-1.5 rounded-full"
-        style={{ backgroundColor: '#1B7A3D', boxShadow: '0 0 4px rgba(27,122,61,0.45)' }}
+        className="h-1 w-1 rounded-full"
+        style={{ backgroundColor: 'rgba(27,122,61,0.5)' }}
         title="Connected"
         aria-label="Connected"
       />
@@ -1365,34 +1363,28 @@ function SendModeToggle({
   mode: 'direct' | 'queue'
   onChange: (m: 'direct' | 'queue') => void
 }) {
-  return (
-    <div
-      className="flex items-center rounded-lg overflow-hidden flex-shrink-0"
-      style={{ border: '1px solid rgba(0,0,0,0.08)' }}
-    >
-      <button
-        onClick={() => onChange('direct')}
-        className="px-2.5 py-1 text-[10px] font-mono transition-all"
-        style={
-          mode === 'direct'
-            ? { background: '#000', color: '#fff' }
-            : { color: 'rgba(0,0,0,0.35)' }
-        }
-      >
-        Send
-      </button>
+  // Default (direct) is invisible chrome — just a tiny ⌘⏎ hint.
+  // Queue mode is obviously on — full pill, green, easy to switch back.
+  if (mode === 'direct') {
+    return (
       <button
         onClick={() => onChange('queue')}
-        className="px-2.5 py-1 text-[10px] font-mono transition-all"
-        style={
-          mode === 'queue'
-            ? { background: '#1B7A3D', color: '#fff' }
-            : { color: 'rgba(0,0,0,0.35)' }
-        }
+        className="flex items-center px-1.5 py-1 text-[10px] font-mono text-on-surface/25 hover:text-on-surface/60 transition-colors flex-shrink-0"
+        title="Switch to queue mode (or press ⌘⏎ per-message)"
       >
-        Queue
+        ⌘⏎
       </button>
-    </div>
+    )
+  }
+  return (
+    <button
+      onClick={() => onChange('direct')}
+      className="flex items-center px-2.5 py-1 text-[10px] font-mono rounded-md flex-shrink-0 transition-colors"
+      style={{ background: '#1B7A3D', color: '#fff' }}
+      title="Queue mode active — click to switch back to send"
+    >
+      Queue
+    </button>
   )
 }
 
@@ -2232,38 +2224,14 @@ export default function CCStream() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-5xl px-6 lg:px-10">
-          {/* Ambient welcome — green + gold presence */}
+          {/* Ambient welcome — quiet. Vitals + any pending actions only. */}
           {!hasMessages && status !== 'streaming' && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ type: 'spring', stiffness: 60, damping: 20 }}
-              className="flex flex-col items-center pt-[15vh] pb-4"
+              transition={{ type: 'spring', stiffness: 80, damping: 22 }}
+              className="flex flex-col items-center pt-[22vh] pb-4"
             >
-              <span className="text-label-md font-mono uppercase tracking-[0.3em] text-on-surface-muted/25">
-                Ambient Intelligence
-              </span>
-              <h1 className="mt-3 font-display text-display-lg font-light text-on-surface">
-                Eco<span className="bg-gradient-to-r from-primary to-gold-bright bg-clip-text text-transparent font-normal">dia</span>OS
-              </h1>
-
-              {/* The Breath — green + gold */}
-              <div className="mt-8 mb-6 flex items-center gap-2.5">
-                {[
-                  { color: '#1B7A3D', shadow: 'rgba(27,122,61,0.5)', delay: 0 },
-                  { color: '#2ECC71', shadow: 'rgba(46,204,113,0.4)', delay: 0.25 },
-                  { color: '#F59E0B', shadow: 'rgba(245,158,11,0.4)', delay: 0.5 },
-                ].map((b, i) => (
-                  <motion.div
-                    key={i}
-                    className="rounded-full"
-                    style={{ backgroundColor: b.color, width: 3, height: 3, boxShadow: `0 0 8px ${b.shadow}` }}
-                    animate={{ scale: [1, 2, 1], opacity: [0.3, 0.9, 0.3] }}
-                    transition={{ duration: 3, repeat: Infinity, delay: b.delay, ease: 'easeInOut' }}
-                  />
-                ))}
-              </div>
-
               <AmbientVitals />
               <div className="mt-3 w-full">
                 <PendingActionsBanner />
@@ -2379,30 +2347,8 @@ export default function CCStream() {
             )}
           </AnimatePresence>
 
-          {/* Interrupt strip */}
-          <AnimatePresence>
-            {status === 'streaming' && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden mb-1"
-              >
-                <div className="flex items-center gap-2 px-1 pb-1">
-                  <motion.div
-                    className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-amber-500"
-                    animate={{ opacity: [0.3, 1, 0.3] }}
-                    transition={{ duration: 1.2, repeat: Infinity }}
-                  />
-                  <span className="text-[10px] font-mono text-on-surface/50 tracking-wide">
-                    interrupt mode
-                  </span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Input row — no background, single black bottom border */}
+          {/* Input row — no background, single black bottom border.
+              (Interrupt strip removed — the stop button in the row is enough.) */}
           <div className="flex items-end gap-3 py-3" style={{ borderBottom: '1px solid #000' }}>
             {/* Paperclip — pure black */}
             <label htmlFor={fileInputId} className="flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center text-black hover:opacity-60 transition-opacity">
