@@ -717,6 +717,60 @@ export function useWebSocket() {
               break
             }
 
+            // ─── Rescue (ecodia-rescue process) ───────────────────────
+            // Parallel to os-session:* events but for the standalone rescue
+            // session. Routed into useRescueStore, not useOSSessionStore.
+            case 'rescue:ready': {
+              import('@/store/rescueStore').then(({ useRescueStore }) => {
+                useRescueStore.getState().setReady(true)
+              })
+              break
+            }
+            case 'rescue:status': {
+              import('@/store/rescueStore').then(({ useRescueStore }) => {
+                const raw = msg.status as string | undefined
+                const next: 'idle' | 'streaming' | 'error' | 'unknown' =
+                  raw === 'streaming' ? 'streaming' :
+                  raw === 'error' ? 'error' :
+                  raw === 'idle' ? 'idle' : 'unknown'
+                useRescueStore.getState().setStatus(next)
+                // When turn ends, flush current stream text into messages.
+                if (next === 'idle' || next === 'error') {
+                  useRescueStore.getState().flushStreamToMessage()
+                }
+              })
+              break
+            }
+            case 'rescue:output': {
+              import('@/store/rescueStore').then(({ useRescueStore }) => {
+                const store = useRescueStore.getState()
+                const d = msg.data || msg
+                if (d.type === 'text_delta' && d.content) {
+                  store.appendStreamText(d.content)
+                } else if (d.type === 'thinking_delta' && d.content) {
+                  store.appendStreamThinking(d.content)
+                } else if (d.type === 'tool_use_starting' && d.tool_use_id) {
+                  store.onToolStart(d.tool_use_id, d.tool_name || 'tool')
+                } else if (d.type === 'tool_use_input_complete' && d.tool_use_id) {
+                  store.onToolInput(d.tool_use_id, d.input)
+                } else if (d.type === 'tool_result' && d.tool_use_id) {
+                  store.onToolResult(d.tool_use_id, String(d.content || ''), !!d.is_error)
+                } else if (d.type === 'turn_complete') {
+                  store.flushStreamToMessage()
+                } else if (d.type === 'error') {
+                  store.flushStreamToMessage()
+                }
+              })
+              break
+            }
+            case 'rescue:exit': {
+              import('@/store/rescueStore').then(({ useRescueStore }) => {
+                useRescueStore.getState().setReady(false)
+                useRescueStore.getState().setStatus('unknown')
+              })
+              break
+            }
+
             // ─── Seamless session handover ────────────────────────
             case 'os-session:handover': {
               const osStore = useOSSessionStore.getState()
