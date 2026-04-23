@@ -1207,6 +1207,38 @@ function ConnectionStateIndicator() {
 }
 
 /**
+ * ContextFillIndicator — shows how close the session is to the compact
+ * threshold. Hidden below 50% (no need to clutter when there's plenty of
+ * headroom). Amber at 50%+, red at 90%+. Gives Tate a heads-up so the
+ * eventual handover is never a surprise.
+ */
+function ContextFillIndicator() {
+  const tokenUsage = useOSSessionStore(s => s.tokenUsage) as (null | { threshold?: number; pctOfThreshold?: number; turnInput?: number })
+  if (!tokenUsage) return null
+  const pct = typeof tokenUsage.pctOfThreshold === 'number' ? tokenUsage.pctOfThreshold : null
+  if (pct === null || pct < 50) return null
+
+  const color = pct >= 90 ? '#C25B48' : pct >= 75 ? '#D97706' : '#7C6D44'
+  const label = `context ${pct}%`
+  const title = `Current turn input: ${tokenUsage.turnInput?.toLocaleString() || '?'} / ${tokenUsage.threshold?.toLocaleString() || '?'} tokens. At 100% the OS will hand over to a fresh session.`
+
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono tracking-wide"
+      style={{
+        background: `${color}0f`,
+        border: `1px solid ${color}26`,
+        color: `${color}dd`,
+      }}
+      title={title}
+      aria-label={title}
+    >
+      <span>{label}</span>
+    </div>
+  )
+}
+
+/**
  * HandoverIndicator — subtle visible signal when the OS's context is
  * being reset (auto-handover at token threshold, or whatever else pushes
  * through a 'handover' state). Without this the session silently loses
@@ -2191,6 +2223,10 @@ export default function CCStream() {
         {/* Pinnacle P1 — always-visible connection state chip. */}
         <div className="pointer-events-none">
           <ConnectionStateIndicator />
+        </div>
+        {/* Context-fill warning — hidden below 50% of threshold. */}
+        <div className="pointer-events-none">
+          <ContextFillIndicator />
         </div>
         {/* Message queue pill — hidden when empty. */}
         <div className="pointer-events-auto">
