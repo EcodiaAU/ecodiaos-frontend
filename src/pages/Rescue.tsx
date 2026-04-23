@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
-import { Send, Square } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { RotateCcw, Send, Square } from 'lucide-react'
 import { useRescueStore } from '@/store/rescueStore'
 import {
   sendRescueMessage,
   invokeRescue,
   abortRescue,
+  resetRescue,
   getRescueStatus,
 } from '@/api/rescue'
 
@@ -80,12 +81,29 @@ export default function RescuePage() {
     try { await abortRescue('user_abort') } catch {}
   }
 
+  const handleReset = async () => {
+    try {
+      await resetRescue()
+      useRescueStore.getState().reset()
+    } catch {}
+  }
+
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
   }
+
+  // Auto-resize textarea with content, matches Cortex.
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    const el = e.target
+    requestAnimationFrame(() => {
+      el.style.height = 'auto'
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px'
+    })
+  }, [])
 
   return (
     <div className="absolute inset-0 flex flex-col">
@@ -169,7 +187,7 @@ export default function RescuePage() {
             </span>
             <textarea
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKey}
               placeholder={ready ? '' : 'offline'}
               disabled={!ready}
@@ -178,7 +196,7 @@ export default function RescuePage() {
               style={{ maxHeight: 200 }}
             />
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-1">
               {isStreaming ? (
                 <button
                   onClick={handleAbort}
@@ -188,14 +206,25 @@ export default function RescuePage() {
                   <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />
                 </button>
               ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || sending || !ready}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-amber-700 hover:text-amber-800 transition-colors disabled:opacity-30"
-                  title="Send"
-                >
-                  <Send className="h-3.5 w-3.5" strokeWidth={1.75} />
-                </button>
+                <>
+                  {hasContent && (
+                    <button
+                      onClick={handleReset}
+                      className="flex h-7 w-7 items-center justify-center text-on-surface/40 hover:text-on-surface/80 transition-colors"
+                      title="Reset — start fresh rescue conversation"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() || sending || !ready}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-amber-700 hover:text-amber-800 transition-colors disabled:opacity-30"
+                    title="Send"
+                  >
+                    <Send className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  </button>
+                </>
               )}
             </div>
           </div>

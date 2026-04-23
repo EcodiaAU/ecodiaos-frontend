@@ -41,6 +41,11 @@ export async function abortRescue(reason: string = 'user_abort') {
   return data as { aborted: boolean; reason: string }
 }
 
+export async function resetRescue() {
+  const { data } = await api.post('/rescue/reset')
+  return data as { reset: boolean }
+}
+
 export async function getRescueStatus() {
   const { data } = await api.get('/rescue/status')
   return data as RescueStatus
