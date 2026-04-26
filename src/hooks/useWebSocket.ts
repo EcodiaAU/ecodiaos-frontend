@@ -53,6 +53,13 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   const c = chunk as Record<string, unknown>
   const osStore = useOSSessionStore.getState()
 
+  // Pinnacle P1: update chunk-level seq if greater than last seen.
+  function bumpSeq(seq: unknown) {
+    if (typeof seq !== 'number') return
+    const cur = osStore.lastSeq
+    if (cur == null || seq > cur) osStore.setLastSeq(seq)
+  }
+
   // Auto-promote to streaming on any inbound content. If we missed
   // the initial 'status: streaming' event (brief WS blip between
   // sendMessage and first delta), the UI would sit in idle/complete
@@ -64,14 +71,22 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   const type = c.type as string
   const content = c.content as string | undefined
 
+  // ─── Pinnacle P1: bare seq update ────────────────────────────────────
+  if (type === 'seq') {
+    bumpSeq(c.seq)
+    return
+  }
+
   // ─── Pinnacle P1: assistant_message_starting ─────────────────────────
   if (type === 'assistant_message_starting') {
+    bumpSeq(c.seq)
     osStore.setAssistantTurnStarting(true)
     return
   }
 
   // thinking_delta: real-time streaming of extended thinking
   if (type === 'thinking_delta' && content) {
+    bumpSeq(c.seq)
     // First thinking also clears the pre-token pulse.
     if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
     osStore.appendStreamThinking(content)
@@ -79,6 +94,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   }
   // thinking: complete thinking block
   if (type === 'thinking' && content) {
+    bumpSeq(c.seq)
     if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
     osStore.appendStreamThinking(content)
     return
@@ -88,6 +104,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   // Goes only into streamText (the rendered buffer). streamChunks is for raw
   // NDJSON archival — appending deltas there too made saved content double.
   if (type === 'text_delta' && content) {
+    bumpSeq(c.seq)
     if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
     osStore.appendStreamText(content)
     return
@@ -98,6 +115,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   // finalised (status 'complete' or 'idle'), a late-arriving assistant_text
   // would otherwise populate streamText and ghost into the NEXT turn's buffer.
   if (type === 'assistant_text' && content) {
+    bumpSeq(c.seq)
     if (osStore.status !== 'streaming') return
     flushStreamBuffersSync()
     const effectiveLen = getEffectiveStreamTextLength()
@@ -110,6 +128,19 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   // ─── Pinnacle P1: tool_use lifecycle ─────────────────────────────────
   // tool_use_starting: name + id known, input not yet finalised.
   if (type === 'tool_use_starting') {
+    bumpSeq(c.seq)
+    const id = c.id as string | undefined
+    const name = c.name as string | undefined
+    if (name) {
+      if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
+      osStore.addStreamTool({ name, toolUseId: id, status: 'preparing' })
+    }
+    return
+  }
+  // tool_use_start: Pinnacle P1 variant (payload: { id, name, input?, seq, startedAt? }).
+  // Treated the same as tool_use_starting — both mark the tool as 'preparing'.
+  if (type === 'tool_use_start') {
+    bumpSeq(c.seq)
     const id = c.id as string | undefined
     const name = c.name as string | undefined
     if (name) {
@@ -120,6 +151,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   }
   // tool_use_input_complete: input json assembled, tool call dispatching.
   if (type === 'tool_use_input_complete') {
+    bumpSeq(c.seq)
     const id = c.id as string | undefined
     const name = c.name as string | undefined
     const input = c.input
@@ -132,8 +164,29 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
     }
     return
   }
+  // tool_use_end: Pinnacle P1 variant (payload: { id, durationMs?, error?, seq }).
+  // On error field present: marks tool as errored; otherwise marks as done.
+  if (type === 'tool_use_end') {
+    bumpSeq(c.seq)
+    const id = (c.id as string | undefined) || (c.tool_use_id as string | undefined)
+    if (id) {
+      const errorMsg = c.error as string | undefined
+      if (errorMsg) {
+        osStore.updateStreamTool(id, {
+          error: errorMsg,
+          completedAt: Date.now(),
+          status: 'error',
+          isError: true,
+        })
+      } else {
+        osStore.updateStreamTool(id, { completedAt: Date.now() })
+      }
+    }
+    return
+  }
   // tool_use_result: tool succeeded with output.
   if (type === 'tool_use_result') {
+    bumpSeq(c.seq)
     const matchKey = (c.tool_use_id as string | undefined) || (c.name as string | undefined)
     if (matchKey) {
       const resultStr = content
@@ -149,6 +202,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   }
   // tool_use_error: tool failed — surface error content + mark errored.
   if (type === 'tool_use_error') {
+    bumpSeq(c.seq)
     const matchKey = (c.tool_use_id as string | undefined) || (c.name as string | undefined)
     if (matchKey) {
       const resultStr = content
@@ -167,6 +221,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   // Legacy tool_use (one-shot — whole tool in a single event). Still emitted
   // by some older code paths. Treated as both start+complete.
   if (type === 'tool_use' && Array.isArray(c.tools)) {
+    bumpSeq(c.seq)
     for (const t of c.tools as Array<{ name: string; id?: string; input?: unknown }>) {
       osStore.addStreamTool({
         name: t.name,
@@ -178,6 +233,7 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   }
   // Legacy tool_result — match by tool_use_id or name.
   if (type === 'tool_result') {
+    bumpSeq(c.seq)
     const matchKey = (c.tool_use_id as string | undefined) || (c.name as string | undefined)
     if (matchKey) {
       const resultStr = content
@@ -193,31 +249,44 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   }
 
   // ─── Pinnacle P1: turn_complete ──────────────────────────────────────
-  // Full telemetry for the turn — gets attached to the next finalised message.
+  // Full telemetry for the turn — attached to the next finalised message and
+  // also stored as lastTurnTelemetry so it survives after pendingTurnTelemetry
+  // is cleared by finalizeResponse.
   if (type === 'turn_complete') {
+    bumpSeq(c.seq)
     osStore.setAssistantTurnStarting(false)
-    osStore.setPendingTurnTelemetry({
+    const telemetry: import('@/store/osSessionStore').TurnTelemetry = {
       turnId: crypto.randomUUID(),
       model: (c.model as string) || 'unknown',
-      inputTokens: Number(c.input_tokens ?? 0),
-      outputTokens: Number(c.output_tokens ?? 0),
-      cacheReadTokens: Number(c.cache_read_tokens ?? 0),
-      cacheWriteTokens: Number(c.cache_write_tokens ?? 0),
+      inputTokens: c.input_tokens != null ? Number(c.input_tokens) : undefined,
+      outputTokens: c.output_tokens != null ? Number(c.output_tokens) : undefined,
+      cacheReadTokens: c.cache_read_tokens != null ? Number(c.cache_read_tokens) : undefined,
+      cacheWriteTokens: c.cache_write_tokens != null ? Number(c.cache_write_tokens) : undefined,
+      cacheCreationTokens: c.cache_creation_tokens != null ? Number(c.cache_creation_tokens) : undefined,
+      costUsd: c.cost_usd != null ? Number(c.cost_usd) : undefined,
+      toolCallCount: c.tool_call_count != null ? Number(c.tool_call_count) : undefined,
+      numTurns: c.num_turns != null ? Number(c.num_turns) : undefined,
       durationMs: Number(c.duration_ms ?? 0),
       stopReason: (c.stop_reason as string) ?? null,
       at: Date.now(),
-    })
+    }
+    osStore.setPendingTurnTelemetry(telemetry)
+    osStore.setLastTurnTelemetry(telemetry)
     return
   }
 
   // ─── Pinnacle P1: compact_boundary phase events ──────────────────────
+  // Handles both legacy phase values ('start'/'end') and new ones ('starting'/'complete').
   if (type === 'compact_boundary') {
+    bumpSeq(c.seq)
     const phase = c.phase as string
-    if (phase === 'start') {
+    if (phase === 'starting' || phase === 'start') {
       osStore.setCompactionPhase('active')
+      osStore.setCompactingInPlace(true)
       osStore.pushInlineBanner({ kind: 'compaction', detail: 'start' })
-    } else if (phase === 'end') {
+    } else if (phase === 'complete' || phase === 'end') {
       osStore.setCompactionPhase('idle')
+      osStore.setCompactingInPlace(false)
       osStore.pushInlineBanner({ kind: 'compaction', detail: 'end' })
     }
     return
@@ -225,13 +294,24 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
 
   // ─── Pinnacle P1: session_event ──────────────────────────────────────
   if (type === 'session_event') {
+    bumpSeq(c.seq)
     const subtype = (c.subtype as string) || 'unknown'
     osStore.pushInlineBanner({ kind: 'session_event', detail: subtype })
     return
   }
 
+  // ─── Pinnacle P1: sdk_event_unknown ──────────────────────────────────
+  // Unknown SDK event forwarded by the backend — log for diagnostics, no
+  // state mutation.
+  if (type === 'sdk_event_unknown') {
+    bumpSeq(c.seq)
+    console.warn('[osSession] unknown SDK event', c)
+    return
+  }
+
   // Legacy stream format (backward compat with CLI-spawned sessions).
   if (type === 'stream' && content) {
+    bumpSeq(c.seq)
     osStore.appendStreamChunk(content)
     try {
       const parsed = JSON.parse(content)

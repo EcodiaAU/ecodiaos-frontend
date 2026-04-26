@@ -76,9 +76,20 @@ export async function getEnergyHistory(weeks = 4) {
   }>
 }
 
-/** Recover missed assistant response after tab close / disconnect */
-export async function recoverResponse(since?: string) {
-  const { data } = await api.get('/os-session/recover', { params: since ? { since } : {} })
+/** Recover missed assistant response after tab close / disconnect.
+ *
+ *  Accepts an optional opts object (Pinnacle P1):
+ *  - sinceSeq: replay from a specific chunk-level seq
+ *  - sinceTimestamp: ISO timestamp alternative to the positional `since` arg
+ *
+ *  Backward compatible — callers using only the first arg (`since`) continue
+ *  to work without change. */
+export async function recoverResponse(since?: string, opts?: { sinceSeq?: number; sinceTimestamp?: string }) {
+  const params: Record<string, string | number> = {}
+  if (since) params.since = since
+  if (opts?.sinceSeq != null) params.since_seq = opts.sinceSeq
+  if (opts?.sinceTimestamp) params.since_timestamp = opts.sinceTimestamp
+  const { data } = await api.get('/os-session/recover', { params: Object.keys(params).length ? params : {} })
   return data as {
     found: boolean
     text: string

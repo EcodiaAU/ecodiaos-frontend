@@ -51,19 +51,29 @@ export interface LiveToolCall {
   status?: 'preparing' | 'running' | 'done' | 'error'
   /** True when status === 'error'; result carries the error body. */
   isError?: boolean
+  /** Pinnacle P1: error message from tool_use_end when tool failed. */
+  error?: string
 }
 
 /** Per-turn telemetry emitted in turn_complete (Pinnacle P1). */
 export interface TurnTelemetry {
   turnId: string
-  model: string
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
   durationMs: number
-  stopReason: string | null
-  at: number
+  model?: string
+  stopReason?: string | null
+  at?: number
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  /** Tokens written to the cache during this turn (alias: cacheWriteTokens). */
+  cacheCreationTokens?: number
+  cacheWriteTokens?: number
+  /** Estimated USD cost for this turn. */
+  costUsd?: number
+  /** Number of tool calls made during this turn. */
+  toolCallCount?: number
+  /** Total conversation turns in this session. */
+  numTurns?: number
 }
 
 /** Transient inline banner (compaction, session events). */
@@ -118,6 +128,18 @@ interface OSSessionStore {
   /** Pinnacle P1: monotonic seq of last WS event applied. Persisted so a hard
    *  refresh can request replay from the backend ring buffer. */
   lastSeenSeq: number | null
+  /** Pinnacle P1: chunk-level seq of the last os-session:output chunk applied.
+   *  Separate from lastSeenSeq (which tracks WS-message-level seq). */
+  lastSeq: number | null
+  /** Pinnacle P1: telemetry from the last completed turn. Survives
+   *  finalizeResponse so it remains accessible after pendingTurnTelemetry is
+   *  cleared. */
+  lastTurnTelemetry: TurnTelemetry | null
+  /** Pinnacle P1: true while compact_boundary phase='starting' is active (i.e.
+   *  compaction is in progress). Cleared on phase='complete'. Distinct from
+   *  compactionPhase (enum) — this boolean is for external consumers that just
+   *  need a yes/no signal. */
+  compactingInPlace: boolean
   sessionId: string | null
   /** Token usage tracking for auto-compaction */
   tokenUsage: TokenUsage | null
@@ -168,6 +190,9 @@ interface OSSessionStore {
   dismissInlineBanner: (id: string) => void
   setCompactionPhase: (p: 'idle' | 'active') => void
   setLastSeenSeq: (seq: number | null) => void
+  setLastSeq: (seq: number | null) => void
+  setLastTurnTelemetry: (t: TurnTelemetry | null) => void
+  setCompactingInPlace: (v: boolean) => void
   /** Render a delivered queued message as a user card without disrupting any
    *  in-flight stream state (status, streamText, buffers). Used when the
    *  backend auto-delivers queue messages — we want them visible in the chat
@@ -263,6 +288,9 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   inlineBanners: [],
   compactionPhase: 'idle',
   lastSeenSeq: null,
+  lastSeq: null,
+  lastTurnTelemetry: null,
+  compactingInPlace: false,
   sessionId: null,
   tokenUsage: null,
   compacting: false,
@@ -485,7 +513,7 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
     messages: [], streamChunks: [], streamText: '', streamTools: [], streamThinking: '', status: 'idle',
     tokenUsage: null, lastUserMessageAt: null, recoveryAttempted: false, interruptQueue: [],
     assistantTurnStarting: false, pendingTurnTelemetry: null, inlineBanners: [],
-    compactionPhase: 'idle', lastSeenSeq: null,
+    compactionPhase: 'idle', lastSeenSeq: null, lastSeq: null, lastTurnTelemetry: null,
   }),
 
   /** Inject a response recovered from the backend after tab close */
@@ -543,6 +571,12 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   setCompactionPhase: (p) => set({ compactionPhase: p }),
 
   setLastSeenSeq: (seq) => set({ lastSeenSeq: seq }),
+
+  setLastSeq: (seq) => set({ lastSeq: seq }),
+
+  setLastTurnTelemetry: (t) => set({ lastTurnTelemetry: t }),
+
+  setCompactingInPlace: (v) => set({ compactingInPlace: v }),
 
   addDeliveredQueueMessage: (content) => {
     if (!content) return

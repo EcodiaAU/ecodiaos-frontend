@@ -989,12 +989,15 @@ function ThinkingIndicator({ visible }: { visible: boolean }) {
  */
 function TurnTelemetryRow({ t }: { t: TurnTelemetry }) {
   const [expanded, setExpanded] = useState(false)
-  const totalIn = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens
-  const cacheHitPct = totalIn > 0 ? Math.round((t.cacheReadTokens / totalIn) * 100) : 0
+  const inputTok = t.inputTokens ?? 0
+  const cacheReadTok = t.cacheReadTokens ?? 0
+  const cacheWriteTok = t.cacheWriteTokens ?? 0
+  const totalIn = inputTok + cacheReadTok + cacheWriteTok
+  const cacheHitPct = totalIn > 0 ? Math.round((cacheReadTok / totalIn) * 100) : 0
   const durSec = (t.durationMs / 1000).toFixed(1)
   const fmt = (n: number) =>
     n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-  const modelShort = t.model
+  const modelShort = (t.model ?? 'unknown')
     .replace(/^claude-/, '')
     .replace(/-20\d{6}$/, '')
     .replace(/^(opus|sonnet|haiku)-?/, (m) => m)
@@ -1010,7 +1013,7 @@ function TurnTelemetryRow({ t }: { t: TurnTelemetry }) {
         border: '1px solid rgba(27,122,61,0.06)',
       }}
     >
-      <span>{fmt(t.inputTokens)}→{fmt(t.outputTokens)}</span>
+      <span>{fmt(inputTok)}→{fmt(t.outputTokens ?? 0)}</span>
       <span>·</span>
       <span>{durSec}s</span>
       <span>·</span>
