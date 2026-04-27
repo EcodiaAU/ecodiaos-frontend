@@ -400,7 +400,7 @@ const MARKDOWN_COMPONENTS: Components = {
 
 // ─── Message renderers ──────────────────────────────────────────────
 
-function UserMessage({ message }: { message: OSSessionMessage }) {
+const UserMessage = memo(function UserMessage({ message }: { message: OSSessionMessage }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -417,18 +417,29 @@ function UserMessage({ message }: { message: OSSessionMessage }) {
       </div>
     </motion.div>
   )
-}
+})
 
-function AssistantMessage({ message }: { message: OSSessionMessage }) {
-  const chunks = message.chunks ? parseStreamChunks(message.chunks) : []
-  const textContent = chunks.filter(c => c.type === 'text').map(c => c.content).join('\n\n')
-  // Legacy tool extraction (pre-persistence messages) — name-only pills.
-  const legacyChunkTools = chunks.filter(c => c.type === 'tool_use')
+const AssistantMessage = memo(function AssistantMessage({ message }: { message: OSSessionMessage }) {
+  const chunks = useMemo(
+    () => (message.chunks ? parseStreamChunks(message.chunks) : []),
+    [message.chunks]
+  )
+  const { textContent, legacyChunkTools, thinkingBlocks } = useMemo(() => {
+    const t = chunks.filter(c => c.type === 'text').map(c => c.content).join('\n\n')
+    // Legacy tool extraction (pre-persistence messages) — name-only pills.
+    const lt = chunks.filter(c => c.type === 'tool_use')
+    const tb = chunks.filter(c => c.type === 'thinking')
+    return { textContent: t, legacyChunkTools: lt, thinkingBlocks: tb }
+  }, [chunks])
   const hasPersistedTools = !!(message.tools && message.tools.length > 0)
-  const thinkingBlocks = chunks.filter(c => c.type === 'thinking')
-  const thinkingFromMessage = !thinkingBlocks.length && message.thinking
-    ? [{ type: 'thinking' as const, content: message.thinking }]
-    : thinkingBlocks
+  const thinkingFromMessage = useMemo(
+    () => (
+      !thinkingBlocks.length && message.thinking
+        ? [{ type: 'thinking' as const, content: message.thinking }]
+        : thinkingBlocks
+    ),
+    [thinkingBlocks, message.thinking]
+  )
   const displayText = textContent || message.content
 
   return (
@@ -494,7 +505,7 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
       {displayText && (
         <MessageErrorBoundary fallbackText={displayText}>
           <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{displayText}</ReactMarkdown>
+            <FinalisedMarkdown text={displayText} />
           </div>
         </MessageErrorBoundary>
       )}
@@ -505,7 +516,7 @@ function AssistantMessage({ message }: { message: OSSessionMessage }) {
       {message.telemetry && <TurnTelemetryRow t={message.telemetry} />}
     </motion.div>
   )
-}
+})
 
 /**
  * PersistedToolBlock — one tool-call row inside a finalised assistant message.
@@ -716,6 +727,12 @@ const StreamMarkdown = memo(function StreamMarkdown({ text }: { text: string }) 
         <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
       </div>
     </MessageErrorBoundary>
+  )
+})
+
+const FinalisedMarkdown = memo(function FinalisedMarkdown({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
   )
 })
 
