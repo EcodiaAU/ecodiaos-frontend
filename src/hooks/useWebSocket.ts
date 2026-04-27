@@ -717,11 +717,25 @@ export function useWebSocket() {
               break
 
             // ─── OS Session (Agent SDK stream) ──────────────────
+            //
+            // fork_id routing (Build 1 fork-mode):
+            //   - Main conductor stamps every event with fork_id:"main".
+            //   - Forks stamp with their generated fork_id.
+            //   - Legacy events (older sessions / bedrock fallback paths that
+            //     bypass the new emit helpers) have no fork_id — treat as main.
+            // Fork output events do NOT enter the chat stream — they live in
+            // the ForksDrawer instead. The forks store is updated separately
+            // via os-session:fork registry events.
             case 'os-session:output': {
+              const forkId = (msg.fork_id as string | undefined) || 'main'
+              if (forkId !== 'main') break
               applyOSOutputChunk(msg.data)
               break
             }
             case 'os-session:status': {
+              // Skip fork status events — handled via os-session:fork.
+              const _forkId = (msg.fork_id as string | undefined) || 'main'
+              if (_forkId !== 'main') break
               const osStore = useOSSessionStore.getState()
               // 'live' is a liveness heartbeat emitted every 5s while a turn is
               // in-flight. It does NOT change the top-level status (still streaming)
@@ -778,8 +792,29 @@ export function useWebSocket() {
               break
             }
             case 'os-session:complete': {
+              const _forkId = (msg.fork_id as string | undefined) || 'main'
+              if (_forkId !== 'main') break
               const osStore = useOSSessionStore.getState()
               osStore.finalizeResponse()
+              break
+            }
+            // ─── Fork registry events (Build 1) ──────────────────────
+            // Fired on every spawn / position / status transition / done.
+            // The whole fork snapshot is included so the store always has
+            // ground truth without any extra fetches.
+            case 'os-session:fork': {
+              const kind = msg.kind as string
+              const fork = msg.fork
+              if (!fork || typeof fork !== 'object') break
+              import('@/store/forksStore').then(({ useForksStore }) => {
+                if (kind === 'aborted' || kind === 'error' || kind === 'done') {
+                  // Keep the snapshot — the panel renders recent terminal
+                  // forks for a few minutes so users can read the report.
+                  useForksStore.getState().upsert(fork as never)
+                } else {
+                  useForksStore.getState().upsert(fork as never)
+                }
+              })
               break
             }
             case 'os-session:energy': {

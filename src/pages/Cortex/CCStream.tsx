@@ -30,6 +30,7 @@ import { useConnectionStore } from '@/store/connectionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
 import { listPending, cancelMessage, promoteMessage, updateMessage } from '@/api/messageQueue'
 import type { QueuedMessage } from '@/api/messageQueue'
+import { ForksPill, ForksDrawer } from '@/components/ForksDrawer'
 import { getGmailStats } from '@/api/gmail'
 import { getFinanceSummary } from '@/api/finance'
 import { getActionStats } from '@/api/actions'
@@ -1852,6 +1853,7 @@ export default function CCStream() {
   })
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false)
   const [queuedFlash, setQueuedFlash] = useState(false)
+  const [forksDrawerOpen, setForksDrawerOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const handleSendModeChange = useCallback((mode: 'direct' | 'queue') => {
@@ -2231,6 +2233,12 @@ export default function CCStream() {
         <div className="pointer-events-none">
           <ContextFillIndicator />
         </div>
+        {/* Forks pill — hidden when no parallel forks are running. */}
+        <div className="pointer-events-auto">
+          <AnimatePresence>
+            <ForksPill onClick={() => setForksDrawerOpen(true)} drawerOpen={forksDrawerOpen} />
+          </AnimatePresence>
+        </div>
         {/* Message queue pill — hidden when empty. */}
         <div className="pointer-events-auto">
           <AnimatePresence>
@@ -2242,6 +2250,11 @@ export default function CCStream() {
       {/* Queue drawer */}
       <AnimatePresence>
         {queueDrawerOpen && <QueueDrawer onClose={() => setQueueDrawerOpen(false)} />}
+      </AnimatePresence>
+
+      {/* Forks drawer */}
+      <AnimatePresence>
+        {forksDrawerOpen && <ForksDrawer onClose={() => setForksDrawerOpen(false)} />}
       </AnimatePresence>
 
       {/* Drop overlay */}

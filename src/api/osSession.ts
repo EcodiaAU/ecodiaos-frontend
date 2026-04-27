@@ -139,6 +139,29 @@ export async function triggerHandover() {
   return data
 }
 
+/** Spawn a parallel fork sub-session of the OS. Returns immediately with the
+ *  fork's snapshot — output streams via WS with envelope `fork_id`. */
+export async function spawnFork(brief: string, context_mode: 'recent' | 'brief' = 'recent') {
+  const { data } = await api.post('/os-session/fork', { brief, context_mode })
+  return data as { accepted: true; fork: import('@/store/forksStore').ForkSnapshot }
+}
+
+/** Snapshot of all live forks (and energy/hard caps). */
+export async function listForks() {
+  const { data } = await api.get('/os-session/forks')
+  return data as {
+    live: import('@/store/forksStore').ForkSnapshot[]
+    hard_cap: number
+    energy_caps: Record<string, number>
+  }
+}
+
+/** Abort a running fork. */
+export async function abortFork(forkId: string, reason = 'manual_abort') {
+  const { data } = await api.post(`/os-session/fork/${encodeURIComponent(forkId)}/abort`, { reason })
+  return data as { aborted: boolean; fork_id?: string; reason?: string }
+}
+
 /** Upload a file to Supabase Storage via the backend, returns a public URL.
  * Pass either `base64` (binary, optionally as a data URL) or `text` (raw UTF-8). */
 export async function uploadAttachment(file: {
