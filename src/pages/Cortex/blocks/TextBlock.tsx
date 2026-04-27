@@ -7,6 +7,9 @@ import { Check, Copy } from 'lucide-react'
 import { MarkdownLink } from '@/components/shared/MarkdownLink'
 import type { TextBlock as TextBlockType } from '@/types/cortex'
 
+const STRIP_TAGS = ['analysis', 'thinking', 'scratchpad', 'reasoning', 'reflection', 'summary', 'aside', 'plan', 'inner_monologue']
+const STRIP_TAGS_RE = new RegExp(`</?(?:${STRIP_TAGS.join('|')})\\b[^>]*>`, 'gi')
+
 // Minimal dark theme tuned to our light surface bg
 const codeTheme: Record<string, React.CSSProperties> = {
   'code[class*="language-"]': {
@@ -66,6 +69,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export function TextBlock({ block }: { block: TextBlockType }) {
+  const sanitisedContent = (block.content ?? '').replace(STRIP_TAGS_RE, '')
   return (
     <div className="
       text-sm leading-[1.8] text-on-surface-variant
@@ -218,7 +222,7 @@ export function TextBlock({ block }: { block: TextBlockType }) {
           a: MarkdownLink,
         }}
       >
-        {block.content}
+        {sanitisedContent}
       </ReactMarkdown>
     </div>
   )
