@@ -25,6 +25,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MermaidBlock } from '@/components/MermaidBlock'
 import { MessageErrorBoundary } from '@/components/shared/MessageErrorBoundary'
+import { stripDoctrineNoise } from '@/utils/stripDoctrineNoise'
 import { useOSSessionStore, type OSSessionMessage, type LiveToolCall, type TurnTelemetry, type InlineBannerEntry } from '@/store/osSessionStore'
 import { useConnectionStore } from '@/store/connectionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
@@ -401,6 +402,8 @@ const MARKDOWN_COMPONENTS: Components = {
 // ─── Message renderers ──────────────────────────────────────────────
 
 const UserMessage = memo(function UserMessage({ message }: { message: OSSessionMessage }) {
+  const cleaned = stripDoctrineNoise(message.content)
+  if (!cleaned) return null
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -413,7 +416,7 @@ const UserMessage = memo(function UserMessage({ message }: { message: OSSessionM
         border: '1px solid rgba(27,122,61,0.08)',
         boxShadow: '0 2px 12px -4px rgba(27,122,61,0.06)',
       }}>
-        <p className="text-sm leading-relaxed text-on-surface font-medium">{message.content}</p>
+        <p className="text-sm leading-relaxed text-on-surface font-medium">{cleaned}</p>
       </div>
     </motion.div>
   )
@@ -440,7 +443,10 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
     ),
     [thinkingBlocks, message.thinking]
   )
-  const displayText = textContent || message.content
+  const displayText = useMemo(
+    () => stripDoctrineNoise(textContent || message.content),
+    [textContent, message.content]
+  )
 
   return (
     <motion.div
@@ -720,19 +726,21 @@ function ThinkingBlock({ content }: { content: string }) {
  * the whole subtree if the text hasn't changed.
  */
 const StreamMarkdown = memo(function StreamMarkdown({ text }: { text: string }) {
-  if (!text) return null
+  const cleaned = stripDoctrineNoise(text)
+  if (!cleaned) return null
   return (
-    <MessageErrorBoundary fallbackText={text}>
+    <MessageErrorBoundary fallbackText={cleaned}>
       <div className="cortex-prose text-sm leading-[1.85] text-on-surface-variant">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{cleaned}</ReactMarkdown>
       </div>
     </MessageErrorBoundary>
   )
 })
 
 const FinalisedMarkdown = memo(function FinalisedMarkdown({ text }: { text: string }) {
+  const cleaned = stripDoctrineNoise(text)
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={(url) => url} components={MARKDOWN_COMPONENTS}>{cleaned}</ReactMarkdown>
   )
 })
 
