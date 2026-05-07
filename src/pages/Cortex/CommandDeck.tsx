@@ -33,7 +33,7 @@ interface CommandDeckProps {
 
 function FlyCamera({ target, lookAt }: { target: THREE.Vector3; lookAt: THREE.Vector3 }) {
   const { camera } = useThree()
-  const currentPos = useRef(new THREE.Vector3(0, 0, 12))
+  const currentPos = useRef(new THREE.Vector3(0, 0, 3.5))
   const currentLookAt = useRef(new THREE.Vector3(0, 0, 0))
   const velocity = useRef(new THREE.Vector3())
 
@@ -199,13 +199,14 @@ function Panel3D({
       {/* The actual interactive HTML */}
       <Html
         transform
-        distanceFactor={4}
+        distanceFactor={6}
+        zIndexRange={[100, 0]}
         style={{
           width: `${config.width}px`,
-          height: '80vh',
+          height: '85vh',
           overflow: 'hidden',
-          opacity: active ? 1 : 0.4,
-          transition: 'opacity 0.6s ease',
+          opacity: active ? 1 : 0.35,
+          transition: 'opacity 0.8s ease',
           pointerEvents: active ? 'auto' : 'none',
         }}
         className="command-deck-panel"
@@ -273,15 +274,16 @@ function Scene({ panels, initialPanel }: CommandDeckProps) {
 
   const activeConfig = panels.find(p => p.id === activePanel)
   const cameraTarget = useMemo(() => {
-    if (!activeConfig) return new THREE.Vector3(0, 0, 12)
+    if (!activeConfig) return new THREE.Vector3(0, 0, 8)
     const [x, y, z] = activeConfig.position
-    // Position camera in front of the panel, offset toward the viewer
+    // Camera sits directly in front of the panel at reading distance
     const rot = activeConfig.rotation || [0, 0, 0]
     const yRot = (rot[1] || 0) * Math.PI / 180
+    const dist = 3.5
     return new THREE.Vector3(
-      x - Math.sin(yRot) * 4,
-      y + 0.3,
-      z + Math.cos(yRot) * 4
+      x + Math.sin(yRot) * dist,
+      y,
+      z + Math.cos(yRot) * dist
     )
   }, [activeConfig])
 
@@ -351,7 +353,7 @@ export default function CommandDeck(props: CommandDeckProps) {
   return (
     <div className="fixed inset-0" style={{ background: '#000000' }}>
       <Canvas
-        camera={{ position: [0, 0, 12], fov: 50, near: 0.1, far: 200 }}
+        camera={{ position: [0, 0, 3.5], fov: 50, near: 0.1, far: 200 }}
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
         style={{ background: '#000000' }}
       >
