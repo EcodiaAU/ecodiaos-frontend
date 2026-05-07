@@ -78,8 +78,8 @@ function AttachmentChip({ file, onRemove }: { file: AttachedFile; onRemove: () =
     )
   }
   return (
-    <div className="group flex items-center gap-2 rounded-xl px-3 py-2 flex-shrink-0" style={{ border: '1px solid rgba(27,122,61,0.10)', background: 'rgba(27,122,61,0.03)' }}>
-      <FileText className="h-4 w-4 flex-shrink-0" style={{ color: '#1B7A3D' }} strokeWidth={1.5} />
+    <div className="group flex items-center gap-2 rounded-xl px-3 py-2 flex-shrink-0" style={{ border: '1px solid rgba(46,204,113,0.22)', background: 'rgba(27,122,61,0.15)' }}>
+      <FileText className="h-4 w-4 flex-shrink-0" style={{ color: '#5FE89D' }} strokeWidth={1.5} />
       <div className="min-w-0">
         <p className="max-w-[120px] truncate text-xs font-medium text-on-surface">{file.name}</p>
         <p className="text-[10px] text-on-surface-muted/50">{formatBytes(file.size)}</p>
@@ -111,10 +111,10 @@ function ChromaticVital({ icon: Icon, value, label, color, glowColor, delay = 0 
       transition={{ type: 'spring', stiffness: 80, damping: 20, delay }}
       className="group relative flex items-center gap-2.5 rounded-2xl px-4 py-2.5 holo-border"
       style={{
-        background: `linear-gradient(135deg, rgba(255,255,255,0.55), rgba(255,255,255,0.40))`,
-        boxShadow: `0 8px 24px -8px ${glowColor}, inset 0 1px 0 rgba(255,255,255,0.4)`,
-        border: '1px solid rgba(255,255,255,0.50)',
-        borderTopColor: 'rgba(255,255,255,0.70)',
+        background: `linear-gradient(135deg, rgba(30,34,31,0.80), rgba(22,26,23,0.70))`,
+        boxShadow: `0 8px 24px -8px ${glowColor}, inset 0 1px 0 rgba(255,255,255,0.06)`,
+        border: '1px solid rgba(255,255,255,0.09)',
+        borderTopColor: 'rgba(255,255,255,0.13)',
       }}
     >
       <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{
@@ -124,7 +124,7 @@ function ChromaticVital({ icon: Icon, value, label, color, glowColor, delay = 0 
         <Icon className="h-3.5 w-3.5" style={{ color }} strokeWidth={1.75} />
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-semibold font-mono tabular-nums" style={{ color: '#151716' }}>
+        <p className="text-sm font-semibold font-mono tabular-nums" style={{ color: '#f5efe6' }}>
           {value}
         </p>
         <p className="text-[10px] uppercase tracking-[0.08em] text-on-surface-muted/40 font-mono">{label}</p>
@@ -145,12 +145,12 @@ function AmbientVitals() {
   }
 
   // Green + gold palette for all vitals
-  const GRN = '#1B7A3D'
-  const GRN_GLOW = 'rgba(27,122,61,0.14)'
-  const GLD = '#D97706'
-  const GLD_GLOW = 'rgba(217,119,6,0.14)'
-  const EMR = '#059669'
-  const EMR_GLOW = 'rgba(5,150,105,0.12)'
+  const GRN = '#5FE89D'
+  const GRN_GLOW = 'rgba(95,232,157,0.20)'
+  const GLD = '#FBBF24'
+  const GLD_GLOW = 'rgba(251,191,36,0.20)'
+  const EMR = '#34D399'
+  const EMR_GLOW = 'rgba(52,211,153,0.18)'
 
   const vitals = useMemo(() => {
     const items: Array<{ icon: typeof Mail; value: string; label: string; color: string; glow: string }> = []
@@ -228,9 +228,9 @@ function PendingActionsBanner() {
       />
       <span className="text-xs text-on-surface-variant">
         {actions.pending} action{actions.pending > 1 ? 's' : ''} waiting
-        {actions.urgent > 0 && <span className="ml-1 font-medium" style={{ color: '#D97706' }}>&middot; {actions.urgent} urgent</span>}
+        {actions.urgent > 0 && <span className="ml-1 font-medium" style={{ color: '#FBBF24' }}>&middot; {actions.urgent} urgent</span>}
       </span>
-      <span className="text-[10px] text-on-surface-muted/25 ml-auto font-mono">ask cortex</span>
+      <span className="text-[10px] text-on-surface-muted/50 ml-auto font-mono">ask cortex</span>
     </motion.div>
   )
 }
@@ -272,22 +272,22 @@ function parseStreamChunks(chunks: string[]): ParsedChunk[] {
 // The tool name renders like a system identifier: monospace, glowing.
 
 const TOOL_ACCENT: Record<string, { color: string; glow: string }> = {
-  gmail:    { color: '#1B7A3D', glow: 'rgba(27,122,61,0.10)' },
-  calendar: { color: '#D97706', glow: 'rgba(217,119,6,0.10)' },
-  db:       { color: '#059669', glow: 'rgba(5,150,105,0.10)' },
-  shell:    { color: '#D97706', glow: 'rgba(217,119,6,0.10)' },
-  pm2:      { color: '#B45309', glow: 'rgba(180,83,9,0.10)' },
-  linkedin: { color: '#1B7A3D', glow: 'rgba(27,122,61,0.10)' },
-  drive:    { color: '#059669', glow: 'rgba(5,150,105,0.10)' },
-  xero:     { color: '#D97706', glow: 'rgba(217,119,6,0.10)' },
-  meta:     { color: '#1B7A3D', glow: 'rgba(27,122,61,0.10)' },
-  vercel:   { color: '#059669', glow: 'rgba(5,150,105,0.10)' },
+  gmail:    { color: '#5FE89D', glow: 'rgba(95,232,157,0.18)' },
+  calendar: { color: '#FBBF24', glow: 'rgba(251,191,36,0.18)' },
+  db:       { color: '#34D399', glow: 'rgba(52,211,153,0.18)' },
+  shell:    { color: '#FBBF24', glow: 'rgba(251,191,36,0.18)' },
+  pm2:      { color: '#F59E0B', glow: 'rgba(245,158,11,0.18)' },
+  linkedin: { color: '#5FE89D', glow: 'rgba(95,232,157,0.18)' },
+  drive:    { color: '#34D399', glow: 'rgba(52,211,153,0.18)' },
+  xero:     { color: '#FBBF24', glow: 'rgba(251,191,36,0.18)' },
+  meta:     { color: '#5FE89D', glow: 'rgba(95,232,157,0.18)' },
+  vercel:   { color: '#34D399', glow: 'rgba(52,211,153,0.18)' },
 }
 
 function getToolAccent(name?: string) {
-  if (!name) return { color: '#1B7A3D', glow: 'rgba(27,122,61,0.08)' }
+  if (!name) return { color: '#5FE89D', glow: 'rgba(95,232,157,0.14)' }
   const key = Object.keys(TOOL_ACCENT).find(k => name.toLowerCase().includes(k))
-  return key ? TOOL_ACCENT[key] : { color: '#1B7A3D', glow: 'rgba(27,122,61,0.08)' }
+  return key ? TOOL_ACCENT[key] : { color: '#5FE89D', glow: 'rgba(95,232,157,0.14)' }
 }
 
 // ─── API base URL ────────────────────────────────────────────────────
@@ -333,16 +333,16 @@ function DownloadButton({ href, label }: { href: string; label: string }) {
       className="inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium my-1"
       style={{
         background: done
-          ? 'linear-gradient(135deg, rgba(5,150,105,0.10), rgba(46,204,113,0.06))'
-          : 'linear-gradient(135deg, rgba(27,122,61,0.08), rgba(46,204,113,0.04))',
-        border: `1px solid ${done ? 'rgba(5,150,105,0.20)' : 'rgba(27,122,61,0.15)'}`,
-        color: done ? '#059669' : '#1B7A3D',
+          ? 'linear-gradient(135deg, rgba(5,150,105,0.22), rgba(46,204,113,0.12))'
+          : 'linear-gradient(135deg, rgba(27,122,61,0.20), rgba(46,204,113,0.10))',
+        border: `1px solid ${done ? 'rgba(52,211,153,0.35)' : 'rgba(46,204,113,0.28)'}`,
+        color: done ? '#34D399' : '#5FE89D',
       }}
     >
       {downloading ? (
         <motion.div
           className="h-3.5 w-3.5 rounded-full border-2"
-          style={{ borderColor: '#1B7A3D', borderTopColor: 'transparent' }}
+          style={{ borderColor: '#5FE89D', borderTopColor: 'transparent' }}
           animate={{ rotate: 360 }}
           transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
         />
@@ -412,9 +412,9 @@ const UserMessage = memo(function UserMessage({ message }: { message: OSSessionM
       className="py-3"
     >
       <div className="rounded-2xl px-5 py-3.5 max-w-full" style={{
-        background: 'linear-gradient(135deg, rgba(27,122,61,0.05), rgba(46,204,113,0.03))',
-        border: '1px solid rgba(27,122,61,0.08)',
-        boxShadow: '0 2px 12px -4px rgba(27,122,61,0.06)',
+        background: 'linear-gradient(135deg, rgba(27,122,61,0.18), rgba(46,204,113,0.10))',
+        border: '1px solid rgba(46,204,113,0.22)',
+        boxShadow: '0 2px 12px -4px rgba(27,122,61,0.25)',
       }}>
         <p
           className="text-sm leading-relaxed text-on-surface font-medium"
@@ -499,7 +499,7 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
                 style={{
                   background: `linear-gradient(135deg, ${accent.color}08, ${accent.color}04)`,
                   border: `1px solid ${accent.color}15`,
-                  boxShadow: `0 2px 8px -2px ${accent.glow}, inset 0 1px 0 rgba(255,255,255,0.3)`,
+                  boxShadow: `0 2px 8px -2px ${accent.glow}, inset 0 1px 0 rgba(255,255,255,0.07)`,
                 }}
               >
                 <motion.div
@@ -546,12 +546,12 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
   const [expanded, setExpanded] = useState(false)
   const accent = getToolAccent(tool.name)
   const isError = tool.status === 'error' || tool.isError
-  const dotColor = isError ? '#C25B48' : accent.color
-  const textColor = isError ? '#C25B48cc' : `${accent.color}cc`
-  const border = isError ? 'rgba(194,91,72,0.22)' : `${accent.color}15`
+  const dotColor = isError ? '#F87171' : accent.color
+  const textColor = isError ? '#FCA5A5cc' : `${accent.color}cc`
+  const border = isError ? 'rgba(248,113,113,0.30)' : `${accent.color}22`
   const bg = isError
-    ? 'linear-gradient(135deg, rgba(194,91,72,0.05), rgba(194,91,72,0.02))'
-    : `linear-gradient(135deg, ${accent.color}08, ${accent.color}04)`
+    ? 'linear-gradient(135deg, rgba(220,38,38,0.14), rgba(194,91,72,0.07))'
+    : `linear-gradient(135deg, ${accent.color}12, ${accent.color}06)`
 
   const summary = toolSummaryLine(tool.name, tool.input)
   const resultSummary = toolResultSummary(tool.result)
@@ -591,7 +591,7 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
             {summary && (
               <span
                 className="text-[11px] font-mono truncate"
-                style={{ color: 'rgba(21,23,22,0.85)' }}
+                style={{ color: 'rgba(232,223,208,0.80)' }}
               >
                 {summary}
               </span>
@@ -600,9 +600,9 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
           {!expanded && resultSummary && (
             <div
               className="mt-1 text-[11px] font-mono truncate flex items-center gap-1.5"
-              style={{ color: 'rgba(21,23,22,0.62)' }}
+              style={{ color: 'rgba(168,158,142,0.75)' }}
             >
-              <span style={{ color: 'rgba(21,23,22,0.35)' }}>→</span>
+              <span style={{ color: 'rgba(168,158,142,0.45)' }}>→</span>
               <span className="truncate">{resultSummary}</span>
             </div>
           )}
@@ -615,7 +615,7 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
           >
             <ChevronRight
               className="h-3 w-3"
-              style={{ color: 'rgba(21,23,22,0.50)' }}
+              style={{ color: 'rgba(168,158,142,0.60)' }}
               strokeWidth={2}
             />
           </motion.div>
@@ -639,18 +639,18 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
                 <div>
                   <div
                     className="text-[10px] font-mono uppercase tracking-wider mb-1.5 font-semibold"
-                    style={{ color: 'rgba(21,23,22,0.55)' }}
+                    style={{ color: 'rgba(168,158,142,0.80)' }}
                   >
                     input
                   </div>
                   <pre
                     className="text-[12px] font-mono leading-relaxed whitespace-pre-wrap break-words m-0"
                     style={{
-                      background: 'rgba(0,0,0,0.045)',
-                      color: '#151716',
+                      background: 'rgba(0,0,0,0.35)',
+                      color: '#c8bfb0',
                       padding: '10px 12px',
                       borderRadius: 8,
-                      border: '1px solid rgba(0,0,0,0.05)',
+                      border: '1px solid rgba(255,255,255,0.07)',
                     }}
                   >{formatToolInputForDisplay(tool.input)}</pre>
                 </div>
@@ -659,18 +659,18 @@ function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number
                 <div>
                   <div
                     className="text-[10px] font-mono uppercase tracking-wider mb-1.5 font-semibold"
-                    style={{ color: isError ? '#C25B48' : 'rgba(21,23,22,0.55)' }}
+                    style={{ color: isError ? '#F87171' : 'rgba(168,158,142,0.80)' }}
                   >
                     {isError ? 'error' : 'result'}
                   </div>
                   <pre
                     className="text-[12px] font-mono leading-relaxed whitespace-pre-wrap break-words m-0 max-h-64 overflow-y-auto"
                     style={{
-                      background: isError ? 'rgba(194,91,72,0.06)' : 'rgba(0,0,0,0.045)',
-                      color: '#151716',
+                      background: isError ? 'rgba(220,38,38,0.12)' : 'rgba(0,0,0,0.35)',
+                      color: isError ? '#FCA5A5' : '#c8bfb0',
                       padding: '10px 12px',
                       borderRadius: 8,
-                      border: `1px solid ${isError ? 'rgba(194,91,72,0.15)' : 'rgba(0,0,0,0.05)'}`,
+                      border: `1px solid ${isError ? 'rgba(248,113,113,0.25)' : 'rgba(255,255,255,0.07)'}`,
                     }}
                   >{tool.result}</pre>
                 </div>
@@ -704,9 +704,9 @@ function ThinkingBlock({ content }: { content: string }) {
     <motion.div
       className="rounded-2xl overflow-hidden"
       style={{
-        background: 'linear-gradient(135deg, rgba(27,122,61,0.04), rgba(46,204,113,0.02))',
-        border: '1px solid rgba(27,122,61,0.08)',
-        boxShadow: '0 2px 12px -4px rgba(27,122,61,0.06)',
+        background: 'linear-gradient(135deg, rgba(27,122,61,0.14), rgba(46,204,113,0.07))',
+        border: '1px solid rgba(46,204,113,0.20)',
+        boxShadow: '0 2px 12px -4px rgba(27,122,61,0.20)',
       }}
       layout
     >
@@ -714,7 +714,7 @@ function ThinkingBlock({ content }: { content: string }) {
         <Brain className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: '#2ECC71' }} strokeWidth={1.75} />
         <span className="text-xs text-on-surface-muted/50 leading-relaxed flex-1">{expanded ? content : preview}</span>
         <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ type: 'spring', stiffness: 200, damping: 20 }}>
-          <ChevronDown className="h-3 w-3 text-on-surface-muted/25 flex-shrink-0 mt-0.5" strokeWidth={2} />
+          <ChevronDown className="h-3 w-3 text-on-surface-muted/50 flex-shrink-0 mt-0.5" strokeWidth={2} />
         </motion.div>
       </button>
     </motion.div>
@@ -757,9 +757,9 @@ const FinalisedMarkdown = memo(function FinalisedMarkdown({ text }: { text: stri
 })
 
 const STREAM_DOTS = [
-  { color: '#1B7A3D', delay: 0 },
+  { color: '#5FE89D', delay: 0 },
   { color: '#2ECC71', delay: 0.15 },
-  { color: '#D97706', delay: 0.3 },
+  { color: '#FBBF24', delay: 0.3 },
 ] as const
 
 /** Friendly tool name — strip mcp__ prefix and server name for readability */
@@ -921,7 +921,7 @@ function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
   const status = t.status ?? (t.completedAt ? 'done' : 'running')
   const isActive = status === 'preparing' || status === 'running'
   const accent = getToolAccent(t.name)
-  const errorColor = '#C25B48'
+  const errorColor = '#F87171'
 
   const elapsed = isActive
     ? Math.round((Date.now() - t.startedAt) / 1000)
@@ -934,8 +934,8 @@ function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
     : isActive ? `${accent.color}cc` : `${accent.color}66`
   const summaryColor = status === 'error'
     ? `${errorColor}cc`
-    : isActive ? 'rgba(21,23,22,0.80)' : 'rgba(21,23,22,0.55)'
-  const elapsedOpacity = status === 'error' ? 'text-on-surface-muted/25' : 'text-on-surface-muted/20'
+    : isActive ? 'rgba(232,223,208,0.85)' : 'rgba(168,158,142,0.65)'
+  const elapsedOpacity = status === 'error' ? 'text-on-surface-muted/55' : 'text-on-surface-muted/45'
 
   // Status suffix — surfaces 'preparing' so the pre-input state is visible.
   // No suffix for 'running' and 'done' (clean) or 'error' (handled by icon).
@@ -1012,11 +1012,11 @@ const ThinkingIndicator = memo(function ThinkingIndicator({ visible }: { visible
               key={i}
               className="h-1 w-1 rounded-full"
               style={{ backgroundColor: dot.color }}
-              animate={{ opacity: [0.2, 0.7, 0.2] }}
+              animate={{ opacity: [0.4, 1.0, 0.4] }}
               transition={{ duration: 1.5, repeat: Infinity, delay: dot.delay, ease: 'easeInOut' }}
             />
           ))}
-          <span className="text-[11px] font-mono tracking-wide text-on-surface-muted/40 ml-1">
+          <span className="text-[11px] font-mono tracking-wide text-on-surface-muted/65 ml-1">
             thinking
           </span>
         </motion.div>
@@ -1050,9 +1050,9 @@ function TurnTelemetryRow({ t }: { t: TurnTelemetry }) {
       whileHover={{ opacity: 0.95 }}
       className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 rounded-lg text-[10px] font-mono tracking-wide cursor-pointer select-none"
       style={{
-        color: 'rgba(27,122,61,0.55)',
-        background: 'rgba(27,122,61,0.025)',
-        border: '1px solid rgba(27,122,61,0.06)',
+        color: 'rgba(46,204,113,0.70)',
+        background: 'rgba(27,122,61,0.10)',
+        border: '1px solid rgba(46,204,113,0.18)',
       }}
     >
       <span>{fmt(inputTok)}→{fmt(t.outputTokens ?? 0)}</span>
@@ -1094,9 +1094,9 @@ function InlineBanner({ banner }: { banner: InlineBannerEntry }) {
   // Error-class session events (session errors, aborts, failures) need coral
   // so they stand out from info-class events like "session resumed".
   const isError = banner.kind === 'session_event' && isErrorSubtype(banner.detail)
-  const accent = isError ? '#C25B48'
-                 : isEnd ? '#1B7A3D'
-                 : '#D97706'
+  const accent = isError ? '#F87171'
+                 : isEnd ? '#5FE89D'
+                 : '#FBBF24'
 
   return (
     <motion.div
@@ -1220,16 +1220,16 @@ function ConnectionStateIndicator() {
   const cfg = (() => {
     switch (state) {
       case 'connecting':
-        return { label: 'Connecting…', color: '#D97706', Icon: Loader2, spin: true }
+        return { label: 'Connecting…', color: '#FBBF24', Icon: Loader2, spin: true }
       case 'reconnecting':
-        return { label: 'Reconnecting…', color: '#D97706', Icon: Loader2, spin: true }
+        return { label: 'Reconnecting…', color: '#FBBF24', Icon: Loader2, spin: true }
       case 'catching_up':
-        return { label: 'Catching up…', color: '#D97706', Icon: Loader2, spin: true }
+        return { label: 'Catching up…', color: '#FBBF24', Icon: Loader2, spin: true }
       case 'backend_alive':
-        return { label: 'Stream down (backend working)', color: '#D97706', Icon: Wifi, spin: false }
+        return { label: 'Stream down (backend working)', color: '#FBBF24', Icon: Wifi, spin: false }
       case 'disconnected':
       default:
-        return { label: 'Disconnected', color: '#C25B48', Icon: WifiOff, spin: false }
+        return { label: 'Disconnected', color: '#F87171', Icon: WifiOff, spin: false }
     }
   })()
 
@@ -1263,7 +1263,7 @@ function ContextFillIndicator() {
   const pct = typeof tokenUsage.pctOfThreshold === 'number' ? tokenUsage.pctOfThreshold : null
   if (pct === null || pct < 50) return null
 
-  const color = pct >= 90 ? '#C25B48' : pct >= 75 ? '#D97706' : '#7C6D44'
+  const color = pct >= 90 ? '#F87171' : pct >= 75 ? '#FBBF24' : '#A89E8E'
   const label = `context ${pct}%`
   const title = `Current turn input: ${tokenUsage.turnInput?.toLocaleString() || '?'} / ${tokenUsage.threshold?.toLocaleString() || '?'} tokens. At 100% the OS will hand over to a fresh session.`
 
@@ -1299,7 +1299,7 @@ function HandoverIndicator({ handover }: { handover: ReturnType<typeof useOSSess
               : handover.phase === 'cancelled' ? `Handover cancelled: ${handover.error || 'too_short'}`
               : null
   if (!label) return null
-  const accent = handover.phase === 'failed' ? '#D97706' : '#1B7A3D'
+  const accent = handover.phase === 'failed' ? '#FBBF24' : '#5FE89D'
   return (
     <AnimatePresence>
       <motion.div
@@ -1365,10 +1365,10 @@ const StreamingIndicator = memo(function StreamingIndicator({ text, tools, think
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="flex items-start gap-2 px-3 py-2 rounded-xl"
-          style={{ background: 'rgba(27,122,61,0.03)', border: '1px solid rgba(27,122,61,0.06)' }}
+          style={{ background: 'rgba(27,122,61,0.14)', border: '1px solid rgba(46,204,113,0.20)' }}
         >
           <Brain className="h-3 w-3 mt-0.5 flex-shrink-0" style={{ color: '#2ECC71' }} strokeWidth={1.75} />
-          <span className="text-[11px] text-on-surface-muted/40 leading-relaxed line-clamp-2 font-mono">
+          <span className="text-[11px] text-on-surface-muted/75 leading-relaxed line-clamp-2 font-mono">
             {thinking.length > 200 ? '...' + thinking.slice(-200) : thinking}
           </span>
         </motion.div>
@@ -1393,26 +1393,26 @@ const StreamingIndicator = memo(function StreamingIndicator({ text, tools, think
             />
           ))}
         </div>
-        <span className="text-[11px] text-on-surface-muted/30 font-mono tracking-wider">
+        <span className="text-[11px] text-on-surface-muted/70 font-mono tracking-wider">
           {statusLabel}
           {elapsedSec !== null && (
-            <span className={livenessStale ? 'text-on-surface-muted/15 ml-2' : 'text-on-surface-muted/20 ml-2'}>
+            <span className={livenessStale ? 'text-on-surface-muted/40 ml-2' : 'text-on-surface-muted/50 ml-2'}>
               · {elapsedSec}s
             </span>
           )}
           {toolDetail && (
-            <span className={livenessStale ? 'text-on-surface-muted/15 ml-2' : 'text-on-surface-muted/20 ml-2'}>
+            <span className={livenessStale ? 'text-on-surface-muted/40 ml-2' : 'text-on-surface-muted/50 ml-2'}>
               · {toolDetail}
             </span>
           )}
         </span>
         {livenessStale && (
-          <span className="text-[10px] font-mono" style={{ color: '#C25B48' }}>
+          <span className="text-[10px] font-mono" style={{ color: '#F87171' }}>
             quiet {Math.round((livenessAgeMs ?? 0) / 1000)}s
           </span>
         )}
         {tools.length > 0 && (
-          <span className="text-[10px] text-on-surface-muted/15 font-mono ml-auto">
+          <span className="text-[10px] text-on-surface-muted/45 font-mono ml-auto">
             {tools.filter(t => t.completedAt).length}/{tools.length} tools
           </span>
         )}
@@ -1446,7 +1446,7 @@ function SendModeToggle({
     return (
       <button
         onClick={() => onChange('queue')}
-        className="flex items-center px-1.5 py-1 text-[10px] font-mono text-on-surface/25 hover:text-on-surface/60 transition-colors flex-shrink-0"
+        className="flex items-center px-1.5 py-1 text-[10px] font-mono text-on-surface/50 hover:text-on-surface/80 transition-colors flex-shrink-0"
         title="Switch to queue mode (or press ⌘⏎ per-message)"
       >
         ⌘⏎
@@ -1502,9 +1502,9 @@ function QueuePill({ onClick, drawerOpen }: { onClick: () => void; drawerOpen: b
       onClick={onClick}
       className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-mono"
       style={{
-        background: 'rgba(27,122,61,0.08)',
-        border: '1px solid rgba(27,122,61,0.18)',
-        color: '#1B7A3D',
+        background: 'rgba(27,122,61,0.18)',
+        border: '1px solid rgba(46,204,113,0.30)',
+        color: '#5FE89D',
       }}
     >
       {pulse && (
@@ -1603,7 +1603,7 @@ function QueueMessageRow({
   return (
     <div
       className="py-4 px-5"
-      style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}
+      style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
     >
       {editing ? (
         <div className="space-y-2">
@@ -1612,7 +1612,7 @@ function QueueMessageRow({
             onChange={e => setEditBody(e.target.value)}
             rows={4}
             className="w-full resize-none rounded-xl px-3 py-2.5 text-sm leading-relaxed bg-transparent outline-none"
-            style={{ border: '1px solid rgba(27,122,61,0.22)', color: '#151716' }}
+            style={{ border: '1px solid rgba(46,204,113,0.25)', color: '#e8dfd0' }}
             autoFocus
           />
           <div className="flex items-center gap-3">
@@ -1624,7 +1624,7 @@ function QueueMessageRow({
               value={editMaxAge}
               onChange={e => setEditMaxAge(Number(e.target.value))}
               className="w-16 rounded-md px-2 py-1 text-xs text-center bg-transparent outline-none"
-              style={{ border: '1px solid rgba(0,0,0,0.10)' }}
+              style={{ border: '1px solid rgba(255,255,255,0.12)' }}
             />
           </div>
           <div className="flex items-center gap-4">
@@ -1632,7 +1632,7 @@ function QueueMessageRow({
               onClick={handleSave}
               disabled={saving || !saveValid}
               className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
-              style={{ color: '#1B7A3D' }}
+              style={{ color: '#5FE89D' }}
               title={saveValid ? undefined : 'Body required; max age must be between 1 and 168 hours'}
             >
               {saving ? 'Saving…' : 'Save'}
@@ -1658,7 +1658,7 @@ function QueueMessageRow({
         </p>
       )}
 
-      <div className="mt-2 flex items-center gap-3 text-[11px] text-on-surface-muted/35 font-mono">
+      <div className="mt-2 flex items-center gap-3 text-[11px] text-on-surface-muted/65 font-mono">
         <span>{formatMsgAge(msg.queued_at)}</span>
         {msg.max_age_hours && !editing && (
           <span>· max {msg.max_age_hours}h</span>
@@ -1669,7 +1669,7 @@ function QueueMessageRow({
         <div className="mt-2">
           <button
             onClick={() => setContextExpanded(v => !v)}
-            className="flex items-center gap-1 text-[10px] text-on-surface-muted/30 hover:text-on-surface-muted/50 font-mono transition-colors"
+            className="flex items-center gap-1 text-[10px] text-on-surface-muted/55 hover:text-on-surface-muted/80 font-mono transition-colors"
           >
             <motion.div
               animate={{ rotate: contextExpanded ? 90 : 0 }}
@@ -1691,19 +1691,19 @@ function QueueMessageRow({
                 <div
                   className="rounded-xl px-3 py-2.5 text-[11px] font-mono text-on-surface-muted/50 leading-relaxed space-y-1"
                   style={{
-                    background: 'rgba(0,0,0,0.025)',
-                    border: '1px solid rgba(0,0,0,0.05)',
+                    background: 'rgba(0,0,0,0.30)',
+                    border: '1px solid rgba(255,255,255,0.07)',
                   }}
                 >
                   {msg.context_at_queue?.current_work && (
                     <p>
-                      <span className="text-on-surface-muted/25">work:</span>{' '}
+                      <span className="text-on-surface-muted/55">work:</span>{' '}
                       {msg.context_at_queue.current_work}
                     </p>
                   )}
                   {msg.context_at_queue?.active_plan && (
                     <p>
-                      <span className="text-on-surface-muted/25">plan:</span>{' '}
+                      <span className="text-on-surface-muted/55">plan:</span>{' '}
                       {msg.context_at_queue.active_plan}
                     </p>
                   )}
@@ -1729,7 +1729,7 @@ function QueueMessageRow({
                 ? 'font-medium'
                 : 'text-on-surface-muted/40 hover:text-on-surface-muted/60'
             }`}
-            style={confirmCancel ? { color: '#C25B48' } : undefined}
+            style={confirmCancel ? { color: '#F87171' } : undefined}
           >
             {confirmCancel ? 'Confirm cancel' : 'Cancel'}
           </button>
@@ -1737,7 +1737,7 @@ function QueueMessageRow({
             onClick={handlePromote}
             disabled={promoting}
             className="text-[11px] font-medium transition-opacity hover:opacity-70 disabled:opacity-40 ml-auto"
-            style={{ color: '#1B7A3D' }}
+            style={{ color: '#5FE89D' }}
           >
             {promoting ? 'Sending…' : 'Send now'}
           </button>
@@ -1790,7 +1790,7 @@ function QueueDrawer({ onClose }: { onClose: () => void }) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-30"
-        style={{ background: 'rgba(0,0,0,0.06)' }}
+        style={{ background: 'rgba(0,0,0,0.50)' }}
         onClick={onClose}
       />
 
@@ -1802,21 +1802,21 @@ function QueueDrawer({ onClose }: { onClose: () => void }) {
         transition={{ type: 'spring', stiffness: 280, damping: 28 }}
         className="fixed top-0 right-0 bottom-0 z-40 flex flex-col overflow-hidden w-full sm:w-[40vw] sm:max-w-[480px]"
         style={{
-          background: '#F9F9F9',
-          borderLeft: '1px solid rgba(0,0,0,0.06)',
-          boxShadow: '-8px 0 32px -8px rgba(0,0,0,0.08)',
+          background: '#1a1c1a',
+          borderLeft: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '-8px 0 32px -8px rgba(0,0,0,0.40)',
         }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-5 py-4 flex-shrink-0"
-          style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
         >
           <div className="flex items-center gap-2">
-            <Inbox className="h-4 w-4" style={{ color: '#1B7A3D' }} strokeWidth={1.75} />
+            <Inbox className="h-4 w-4" style={{ color: '#2ECC71' }} strokeWidth={1.75} />
             <span className="text-sm font-medium text-on-surface">Queue</span>
             {messages.length > 0 && (
-              <span className="text-[11px] font-mono text-on-surface-muted/35 ml-0.5">
+              <span className="text-[11px] font-mono text-on-surface-muted/60 ml-0.5">
                 {messages.length}
               </span>
             )}
@@ -1833,12 +1833,12 @@ function QueueDrawer({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <span className="text-xs text-on-surface-muted/30 font-mono">loading…</span>
+              <span className="text-xs text-on-surface-muted/60 font-mono">loading…</span>
             </div>
           ) : sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Inbox className="h-8 w-8 text-on-surface-muted/15" strokeWidth={1.25} />
-              <span className="text-xs text-on-surface-muted/30 font-mono">no queued messages</span>
+              <Inbox className="h-8 w-8 text-on-surface-muted/40" strokeWidth={1.25} />
+              <span className="text-xs text-on-surface-muted/60 font-mono">no queued messages</span>
             </div>
           ) : (
             <div>
@@ -2315,7 +2315,7 @@ export default function CCStream() {
             <div className="absolute inset-4 rounded-3xl border-2 border-dashed" style={{ borderColor: 'rgba(27,122,61,0.35)', background: 'rgba(27,122,61,0.02)' }} />
             <div className="relative flex flex-col items-center gap-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'rgba(27,122,61,0.08)' }}>
-                <ImageIcon className="h-6 w-6" style={{ color: '#1B7A3D' }} strokeWidth={1.5} />
+                <ImageIcon className="h-6 w-6" style={{ color: '#5FE89D' }} strokeWidth={1.5} />
               </div>
               <p className="text-sm font-medium text-on-surface">Drop to attach</p>
             </div>
@@ -2350,7 +2350,7 @@ export default function CCStream() {
               {hasEarlier && (
                 <button
                   onClick={() => setVisibleCount(c => c + VISIBLE_BATCH)}
-                  className="w-full text-center py-2 text-xs text-on-surface-muted/30 hover:text-on-surface-muted/50 transition-colors font-mono"
+                  className="w-full text-center py-2 text-xs text-on-surface-muted/55 hover:text-on-surface-muted/80 transition-colors font-mono"
                 >
                   show {Math.min(VISIBLE_BATCH, allMessages.length - visibleCount)} earlier messages
                 </button>
@@ -2427,9 +2427,9 @@ export default function CCStream() {
                 transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                 className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[11px] font-mono pointer-events-none whitespace-nowrap"
                 style={{
-                  background: 'rgba(27,122,61,0.10)',
-                  border: '1px solid rgba(27,122,61,0.20)',
-                  color: '#1B7A3D',
+                  background: 'rgba(27,122,61,0.22)',
+                  border: '1px solid rgba(46,204,113,0.35)',
+                  color: '#5FE89D',
                 }}
               >
                 Queued

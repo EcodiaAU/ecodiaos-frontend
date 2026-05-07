@@ -322,12 +322,12 @@ export function LivingSession({ block }: { block: CCSessionBlockType }) {
               </span>
             )}
             {distilled.costUsd != null && distilled.costUsd > 0 && (
-              <span className="text-[10px] text-on-surface-muted/25 font-mono">
+              <span className="text-[10px] text-on-surface-muted/55 font-mono">
                 ${distilled.costUsd.toFixed(2)}
               </span>
             )}
             {session?.started_at && (
-              <span className="text-[10px] text-on-surface-muted/25 font-mono">
+              <span className="text-[10px] text-on-surface-muted/55 font-mono">
                 {formatRelative(session.started_at)}
               </span>
             )}
@@ -342,7 +342,7 @@ export function LivingSession({ block }: { block: CCSessionBlockType }) {
               </button>
             )}
 
-            <div className="text-on-surface-muted/20 group-hover:text-on-surface-muted/40 transition-colors">
+            <div className="text-on-surface-muted/45 group-hover:text-on-surface-muted/70 transition-colors">
               {expanded ? <ChevronUp className="h-3 w-3" strokeWidth={1.75} /> : <ChevronDown className="h-3 w-3" strokeWidth={1.75} />}
             </div>
           </div>
@@ -403,7 +403,7 @@ export function LivingSession({ block }: { block: CCSessionBlockType }) {
                   ))}
 
                   {isActive && distilled.activities.length > 0 && (
-                    <div className="mt-2 flex items-center gap-1.5 text-on-surface-muted/20">
+                    <div className="mt-2 flex items-center gap-1.5 text-on-surface-muted/50">
                       <div className="h-1 w-1 rounded-full bg-secondary/40 animate-pulse" />
                       <span className="text-[9px] font-mono uppercase tracking-widest">live</span>
                     </div>

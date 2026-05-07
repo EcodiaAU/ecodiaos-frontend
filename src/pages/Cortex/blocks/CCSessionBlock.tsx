@@ -213,7 +213,7 @@ export function CCSessionBlock({ block }: { block: CCSessionBlockType }) {
               <Square className="h-2.5 w-2.5" strokeWidth={2} /> Stop
             </button>
           )}
-          <div className="text-on-surface-muted/20 group-hover:text-on-surface-muted/40 transition-colors">
+          <div className="text-on-surface-muted/45 group-hover:text-on-surface-muted/70 transition-colors">
             {expanded ? <ChevronUp className="h-3.5 w-3.5" strokeWidth={1.75} /> : <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.75} />}
           </div>
         </div>
@@ -225,9 +225,9 @@ export function CCSessionBlock({ block }: { block: CCSessionBlockType }) {
           <div className="space-y-0.5">
             {summaryLines.map((line, i) => (
               <p key={i} className={`text-[11px] leading-snug truncate ${
-                line.kind === 'tool' ? 'text-on-surface-muted/25 font-mono' :
+                line.kind === 'tool' ? 'text-on-surface-muted/55 font-mono' :
                 line.kind === 'error' ? 'text-error/40' :
-                line.kind === 'cost' ? 'text-on-surface-muted/20 font-mono' :
+                line.kind === 'cost' ? 'text-on-surface-muted/50 font-mono' :
                 'text-on-surface-muted/40'
               }`}>
                 {line.kind === 'tool' ? `› ${line.content}` : line.content}
@@ -237,7 +237,7 @@ export function CCSessionBlock({ block }: { block: CCSessionBlockType }) {
           {isActive && (
             <div className="mt-1.5 flex items-center gap-1.5">
               <div className="h-1 w-1 rounded-full bg-primary/30 animate-pulse" />
-              <span className="text-[9px] font-mono uppercase tracking-widest text-on-surface-muted/20">live</span>
+              <span className="text-[9px] font-mono uppercase tracking-widest text-on-surface-muted/55">live</span>
             </div>
           )}
         </div>
@@ -262,7 +262,7 @@ export function CCSessionBlock({ block }: { block: CCSessionBlockType }) {
                   <div key={i} className={`text-xs leading-relaxed ${
                     line.kind === 'tool' ? 'text-on-surface-muted/30 font-mono' :
                     line.kind === 'error' ? 'text-error/60' :
-                    line.kind === 'cost' ? 'text-on-surface-muted/25 font-mono' :
+                    line.kind === 'cost' ? 'text-on-surface-muted/55 font-mono' :
                     'text-on-surface-variant/80'
                   }`}>
                     {line.kind === 'tool'
@@ -284,7 +284,7 @@ export function CCSessionBlock({ block }: { block: CCSessionBlockType }) {
                 )}
 
                 {isActive && parsed.length > 0 && (
-                  <div className="mt-2 flex items-center gap-1.5 text-on-surface-muted/20">
+                  <div className="mt-2 flex items-center gap-1.5 text-on-surface-muted/50">
                     <div className="h-1 w-1 rounded-full bg-secondary/40 animate-pulse" />
                     <span className="text-[9px] font-mono uppercase tracking-widest">live</span>
                   </div>

@@ -51,9 +51,9 @@ export function ForksPill({ onClick, drawerOpen }: { onClick: () => void; drawer
       onClick={onClick}
       className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-mono"
       style={{
-        background: 'rgba(212,175,55,0.08)',
-        border: '1px solid rgba(212,175,55,0.22)',
-        color: '#8B6F1F',
+        background: 'rgba(212,175,55,0.15)',
+        border: '1px solid rgba(251,191,36,0.32)',
+        color: '#FBBF24',
       }}
       aria-label={`${count} forks running`}
     >
@@ -93,10 +93,10 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
   }
 
   const statusColor =
-    fork.status === 'done'    ? '#1B7A3D' :
-    fork.status === 'error'   ? '#a23b3b' :
-    fork.status === 'aborted' ? '#7a6a3d' :
-                                '#8B6F1F'
+    fork.status === 'done'    ? '#2ECC71' :
+    fork.status === 'error'   ? '#F87171' :
+    fork.status === 'aborted' ? '#FBBF24' :
+                                '#F59E0B'
 
   return (
     <motion.div
@@ -105,8 +105,8 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
       exit={{ opacity: 0, y: -4 }}
       className="rounded-xl px-3 py-2.5 text-[12px] font-mono"
       style={{
-        background: isActive ? 'rgba(212,175,55,0.05)' : 'rgba(0,0,0,0.02)',
-        border: `1px solid ${isActive ? 'rgba(212,175,55,0.20)' : 'rgba(0,0,0,0.06)'}`,
+        background: isActive ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${isActive ? 'rgba(251,191,36,0.30)' : 'rgba(255,255,255,0.08)'}`,
       }}
     >
       <div className="flex items-center justify-between gap-2">
@@ -118,23 +118,23 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
               boxShadow: isActive ? `0 0 6px ${statusColor}` : 'none',
             }}
           />
-          <span className="truncate" style={{ color: '#3a3a3a' }}>
+          <span className="truncate" style={{ color: '#e8dfd0' }}>
             {fork.fork_id}
           </span>
-          <span className="text-[10px]" style={{ color: '#888' }}>
+          <span className="text-[10px]" style={{ color: '#a89e8e' }}>
             [{fork.status}]
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-[10px]" style={{ color: '#888' }}>
+          <span className="text-[10px]" style={{ color: '#a89e8e' }}>
             {ageSec}s · {fork.tool_calls} tool{fork.tool_calls === 1 ? '' : 's'} · {fork.tokens_input + fork.tokens_output} tok
           </span>
           {isActive && (
             <button
               onClick={handleAbort}
               disabled={aborting}
-              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] hover:bg-red-50 disabled:opacity-40"
-              style={{ color: '#a23b3b', border: '1px solid rgba(162,59,59,0.18)' }}
+              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] hover:bg-red-900/20 disabled:opacity-40"
+              style={{ color: '#F87171', border: '1px solid rgba(248,113,113,0.25)' }}
               title="Abort fork"
             >
               <Square className="h-2.5 w-2.5" strokeWidth={2} />
@@ -145,13 +145,13 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
       </div>
 
       {/* Brief — what the fork is doing */}
-      <div className="mt-1.5 text-[11px]" style={{ color: '#555' }}>
-        <span style={{ color: '#888' }}>brief:</span> {fork.brief.length > 200 ? fork.brief.slice(0, 200) + '…' : fork.brief}
+      <div className="mt-1.5 text-[11px]" style={{ color: '#a89e8e' }}>
+        <span style={{ color: '#6b6560' }}>brief:</span> {fork.brief.length > 200 ? fork.brief.slice(0, 200) + '…' : fork.brief}
       </div>
 
       {/* Position — current state. The "ambient signal" Tate asked for. */}
       {fork.position && (
-        <div className="mt-1.5 flex items-start gap-1.5 text-[11px]" style={{ color: '#3a3a3a' }}>
+        <div className="mt-1.5 flex items-start gap-1.5 text-[11px]" style={{ color: '#c8bfb0' }}>
           <Activity className="h-3 w-3 flex-shrink-0 mt-[2px]" strokeWidth={1.75} style={{ color: statusColor }} />
           <span className="truncate">{fork.position}</span>
         </div>
@@ -159,11 +159,11 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
 
       {/* Final result — only on done */}
       {fork.status === 'done' && fork.result && (
-        <div className="mt-2 rounded-md px-2 py-1.5 text-[11px]" style={{ background: 'rgba(27,122,61,0.05)', color: '#1B7A3D' }}>
+        <div className="mt-2 rounded-md px-2 py-1.5 text-[11px]" style={{ background: 'rgba(27,122,61,0.18)', color: '#5FE89D' }}>
           <div className="text-[9px] uppercase tracking-wide opacity-70">report</div>
           <div className="mt-0.5 leading-relaxed">{fork.result}</div>
           {fork.next_step && (
-            <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: 'rgba(27,122,61,0.18)' }}>
+            <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: 'rgba(46,204,113,0.25)' }}>
               <span className="text-[9px] uppercase tracking-wide opacity-70">next step</span>
               <div className="mt-0.5">{fork.next_step}</div>
             </div>
@@ -173,7 +173,7 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
 
       {/* Error */}
       {(fork.status === 'error' || fork.status === 'aborted') && fork.abort_reason && (
-        <div className="mt-2 text-[11px]" style={{ color: '#a23b3b' }}>
+        <div className="mt-2 text-[11px]" style={{ color: '#F87171' }}>
           {fork.status === 'aborted' ? 'aborted' : 'error'}: {fork.abort_reason}
         </div>
       )}
@@ -214,35 +214,36 @@ export function ForksDrawer({ onClose }: { onClose: () => void }) {
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 24, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
-        className="relative h-full w-[420px] max-w-[92vw] overflow-y-auto bg-white shadow-2xl"
+        className="relative h-full w-[420px] max-w-[92vw] overflow-y-auto shadow-2xl"
+        style={{ background: '#1a1c1a' }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Parallel forks"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 bg-white border-b" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b" style={{ background: '#1a1c1a', borderColor: 'rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4" strokeWidth={1.75} style={{ color: '#8B6F1F' }} />
-            <span className="text-[13px] font-medium" style={{ color: '#3a3a3a' }}>
+            <Brain className="h-4 w-4" strokeWidth={1.75} style={{ color: '#FBBF24' }} />
+            <span className="text-[13px] font-medium" style={{ color: '#e8dfd0' }}>
               Parallel forks
             </span>
-            <span className="text-[10px] font-mono" style={{ color: '#888' }}>
+            <span className="text-[10px] font-mono" style={{ color: '#a89e8e' }}>
               {active.length} live · {recent.length} recent
             </span>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1 hover:bg-black/5"
+            className="rounded-md p-1 hover:bg-white/5"
             aria-label="Close"
           >
-            <X className="h-4 w-4" strokeWidth={1.75} style={{ color: '#666' }} />
+            <X className="h-4 w-4" strokeWidth={1.75} style={{ color: '#a89e8e' }} />
           </button>
         </div>
 
         <div className="p-3 flex flex-col gap-2.5">
           {active.length === 0 && recent.length === 0 && (
-            <div className="text-[12px] py-8 text-center" style={{ color: '#888' }}>
+            <div className="text-[12px] py-8 text-center" style={{ color: '#a89e8e' }}>
               No forks running. Spawn one with{' '}
-              <code className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: 'rgba(0,0,0,0.04)' }}>
+              <code className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: 'rgba(255,255,255,0.08)', color: '#5FE89D' }}>
                 POST /api/os-session/fork
               </code>
             </div>
@@ -250,7 +251,7 @@ export function ForksDrawer({ onClose }: { onClose: () => void }) {
 
           {active.length > 0 && (
             <>
-              <div className="px-1 text-[10px] uppercase tracking-wider" style={{ color: '#888' }}>
+              <div className="px-1 text-[10px] uppercase tracking-wider" style={{ color: '#a89e8e' }}>
                 Live
               </div>
               <AnimatePresence>
@@ -263,7 +264,7 @@ export function ForksDrawer({ onClose }: { onClose: () => void }) {
 
           {recent.length > 0 && (
             <>
-              <div className="mt-3 px-1 text-[10px] uppercase tracking-wider" style={{ color: '#888' }}>
+              <div className="mt-3 px-1 text-[10px] uppercase tracking-wider" style={{ color: '#a89e8e' }}>
                 Recently finished
               </div>
               <AnimatePresence>
