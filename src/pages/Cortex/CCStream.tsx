@@ -31,7 +31,7 @@ import { useConnectionStore } from '@/store/connectionStore'
 import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
 import { listPending, cancelMessage, promoteMessage, updateMessage } from '@/api/messageQueue'
 import type { QueuedMessage } from '@/api/messageQueue'
-import { ForksPill, ForksDrawer } from '@/components/ForksDrawer'
+import { ForksDrawer } from '@/components/ForksDrawer'
 import { getGmailStats } from '@/api/gmail'
 import { getFinanceSummary } from '@/api/finance'
 import { getActionStats } from '@/api/actions'
@@ -126,7 +126,7 @@ function ChromaticVital({ icon: Icon, value, label, color, delay = 0 }: {
   )
 }
 
-function AmbientVitals() {
+export function AmbientVitals() {
   const { data: gmail } = useQuery({ queryKey: ['vitals-gmail'], queryFn: getGmailStats, staleTime: 30_000, retry: 1 })
   const { data: finance } = useQuery({ queryKey: ['vitals-finance'], queryFn: getFinanceSummary, staleTime: 30_000, retry: 1 })
   const { data: actions } = useQuery({ queryKey: ['vitals-actions'], queryFn: getActionStats, staleTime: 30_000, retry: 1 })
@@ -196,7 +196,7 @@ function AmbientVitals() {
 
 // ─── Action Proposals — gold accent, the system's decisions ─────────
 
-function PendingActionsBanner() {
+export function PendingActionsBanner() {
   const { data: actions } = useQuery({ queryKey: ['vitals-actions'], queryFn: getActionStats, staleTime: 30_000, retry: 1 })
 
   if (!actions || actions.pending === 0) return null
@@ -1242,7 +1242,7 @@ function ConnectionStateIndicator() {
  * headroom). Amber at 50%+, red at 90%+. Gives Tate a heads-up so the
  * eventual handover is never a surprise.
  */
-function ContextFillIndicator() {
+export function ContextFillIndicator() {
   const tokenUsage = useOSSessionStore(s => s.tokenUsage) as (null | { threshold?: number; pctOfThreshold?: number; turnInput?: number })
   if (!tokenUsage) return null
   const pct = typeof tokenUsage.pctOfThreshold === 'number' ? tokenUsage.pctOfThreshold : null
@@ -2240,39 +2240,23 @@ export default function CCStream() {
 
   return (
     <div
-      className="relative flex h-full flex-col bg-surface text-on-surface"
+      className="relative flex h-full flex-col text-on-surface"
+      style={{ background: 'transparent' }}
       onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false) }}
       onDrop={async e => { e.preventDefault(); setIsDragging(false); await handleFiles(e.dataTransfer.files) }}
     >
-      {/* Top-right chrome cluster — stacks horizontally so neither the queue
-          pill nor the connection state indicator covers the other. Connection
-          indicator sits further left (subtle, always-on), queue pill hugs the
-          right edge (actionable, click-to-open). On iOS, lifts past the
-          notch via env(safe-area-inset-top) and away from the rounded
-          corner via env(safe-area-inset-right). */}
+      {/* Minimal top-right status */}
       <div
-        className="absolute z-40 flex items-center gap-2"
+        className="absolute z-40 flex items-center gap-3"
         style={{
           top: 'calc(0.75rem + env(safe-area-inset-top))',
           right: 'calc(1rem + env(safe-area-inset-right))',
         }}
       >
-        {/* Pinnacle P1 — always-visible connection state chip. */}
         <div className="pointer-events-none">
           <ConnectionStateIndicator />
         </div>
-        {/* Context-fill warning — hidden below 50% of threshold. */}
-        <div className="pointer-events-none">
-          <ContextFillIndicator />
-        </div>
-        {/* Forks pill — hidden when no parallel forks are running. */}
-        <div className="pointer-events-auto">
-          <AnimatePresence>
-            <ForksPill onClick={() => setForksDrawerOpen(true)} drawerOpen={forksDrawerOpen} />
-          </AnimatePresence>
-        </div>
-        {/* Message queue pill — hidden when empty. */}
         <div className="pointer-events-auto">
           <AnimatePresence>
             <QueuePill onClick={() => setQueueDrawerOpen(true)} drawerOpen={queueDrawerOpen} />
@@ -2313,17 +2297,16 @@ export default function CCStream() {
         style={{ WebkitOverflowScrolling: 'touch' as const }}
       >
         <div className="mx-auto max-w-5xl px-3 sm:px-6 lg:px-10">
-          {/* Ambient welcome — quiet. Vitals + any pending actions only. */}
+          {/* Empty state — the void awaits */}
           {!hasMessages && status !== 'streaming' && (
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ type: 'spring', stiffness: 80, damping: 22 }}
-              className="flex flex-col items-center pt-[22vh] pb-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 1 }}
+              className="flex flex-col items-center justify-center pt-[30vh]"
             >
-              <AmbientVitals />
-              <div className="mt-3 w-full">
-                <PendingActionsBanner />
+              <div className="text-[10px] uppercase tracking-[0.2em] font-mono" style={{ color: 'rgba(255,255,255,0.20)' }}>
+                ready
               </div>
             </motion.div>
           )}
