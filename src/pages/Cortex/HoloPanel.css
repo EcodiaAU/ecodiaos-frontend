@@ -1,0 +1,69 @@
+/* Holographic panel — the translucent container that wraps HTML content
+   inside the 3D scene. Designed to feel like a floating display. */
+
+.holo-panel {
+  background: rgba(0, 0, 0, 0.60);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 1.5rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: system-ui, -apple-system, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+.holo-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+}
+
+.holo-panel-minimal {
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.70);
+}
+
+.holo-panel-ghost {
+  background: transparent;
+  border: none;
+  padding: 0.75rem;
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* The title bar of a holo panel */
+.holo-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.holo-panel-header::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(46, 204, 113, 0.60);
+  animation: holo-pulse 3s ease-in-out infinite;
+}
+
+@keyframes holo-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
