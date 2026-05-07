@@ -2324,7 +2324,7 @@ export default function CCStream() {
         className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin"
         style={{ WebkitOverflowScrolling: 'touch' as const }}
       >
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-5xl px-3 sm:px-6 lg:px-10">
           {/* Ambient welcome — quiet. Vitals + any pending actions only. */}
           {!hasMessages && status !== 'streaming' && (
             <motion.div
@@ -2407,7 +2407,7 @@ export default function CCStream() {
           bottom nav bar so the input doesn't sit beneath the home indicator
           or tabs. Desktop scaling preserved via lg: variants. */}
       <div
-        className="w-full px-4 sm:px-6 pt-2 lg:px-10"
+        className="w-full px-3 sm:px-6 pt-2 lg:px-10"
         style={{
           paddingBottom: 'calc(2.5rem + env(safe-area-inset-bottom))',
         }}
