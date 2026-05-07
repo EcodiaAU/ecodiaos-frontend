@@ -5,18 +5,20 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Charcoal-bg + cream-text inversion (permanent, not toggle).
+        // surface = backgrounds (charcoal family), on-surface = text (cream family).
         surface: {
-          DEFAULT: '#F7F6F3',
-          dim: '#EEEDE8',
-          'container-low': '#F0EFEB',
-          container: '#E6E5E0',
-          'container-high': '#DDDCD6',
-          'container-lowest': '#FCFBF9',
+          DEFAULT: '#1a1a1a',
+          dim: '#141414',
+          'container-low': '#1f1f1f',
+          container: '#242424',
+          'container-high': '#2a2a2a',
+          'container-lowest': '#0f0f0f',
         },
         'on-surface': {
-          DEFAULT: '#151716',
-          variant: '#2D3130',
-          muted: '#5A6360',
+          DEFAULT: '#f5efe6',
+          variant: '#e8dfd0',
+          muted: '#a89e8e',
         },
         primary: {
           DEFAULT: '#1B7A3D',

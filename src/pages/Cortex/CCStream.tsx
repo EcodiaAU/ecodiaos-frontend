@@ -991,7 +991,11 @@ function ToolLifecyclePill({ tool: t }: { tool: LiveToolCall }) {
  * tool_use_starting. Fills the silent gap between send and first output
  * that previously looked like a hung UI.
  */
-function ThinkingIndicator({ visible }: { visible: boolean }) {
+// Memoized so the keystroke-driven re-renders of CCStream's textarea state
+// don't unmount/remount the AnimatePresence subtree. Without memo, every
+// keystroke re-rendered this component and the dot-pulse animation reset
+// from frame 0, producing visible flicker.
+const ThinkingIndicator = memo(function ThinkingIndicator({ visible }: { visible: boolean }) {
   return (
     <AnimatePresence>
       {visible && (
@@ -1019,7 +1023,7 @@ function ThinkingIndicator({ visible }: { visible: boolean }) {
       )}
     </AnimatePresence>
   )
-}
+})
 
 /**
  * TurnTelemetryRow — renders per-turn telemetry captured from turn_complete.
@@ -1322,7 +1326,7 @@ function HandoverIndicator({ handover }: { handover: ReturnType<typeof useOSSess
   )
 }
 
-function StreamingIndicator({ text, tools, thinking }: { text: string; tools: LiveToolCall[]; thinking: string }) {
+const StreamingIndicator = memo(function StreamingIndicator({ text, tools, thinking }: { text: string; tools: LiveToolCall[]; thinking: string }) {
   const activeTools = tools.filter(t => !t.completedAt)
   const liveness = useOSSessionStore(s => s.liveness)
   // Tick every 1s so the elapsed counter advances smoothly between the 5s
@@ -1415,7 +1419,7 @@ function StreamingIndicator({ text, tools, thinking }: { text: string; tools: Li
       </div>
     </motion.div>
   )
-}
+})
 
 // ─── Message Queue helpers + components ─────────────────────────────
 
@@ -2252,7 +2256,7 @@ export default function CCStream() {
 
   return (
     <div
-      className="relative flex h-full flex-col"
+      className="relative flex h-full flex-col bg-surface text-on-surface"
       onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false) }}
       onDrop={async e => { e.preventDefault(); setIsDragging(false); await handleFiles(e.dataTransfer.files) }}
@@ -2456,11 +2460,11 @@ export default function CCStream() {
             )}
           </AnimatePresence>
 
-          {/* Input row — no background, single black bottom border.
+          {/* Input row — no background, single cream bottom border on charcoal.
               (Interrupt strip removed — the stop button in the row is enough.) */}
-          <div className="flex items-end gap-3 py-3" style={{ borderBottom: '1px solid #000' }}>
-            {/* Paperclip — pure black */}
-            <label htmlFor={fileInputId} className="flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center text-black hover:opacity-60 transition-opacity">
+          <div className="flex items-end gap-3 py-3" style={{ borderBottom: '1px solid rgba(245,239,230,0.25)' }}>
+            {/* Paperclip — cream */}
+            <label htmlFor={fileInputId} className="flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center text-on-surface hover:opacity-60 transition-opacity">
               <Paperclip className="h-4 w-4" strokeWidth={1.75} />
             </label>
             <input
@@ -2498,7 +2502,7 @@ export default function CCStream() {
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                     onClick={handleAbort}
                     disabled={abortPending}
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-black text-white hover:bg-black/70 transition-colors disabled:opacity-60"
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-on-surface text-surface hover:opacity-80 transition-opacity disabled:opacity-60"
                     title={abortPending ? 'Stopping…' : 'Stop'}
                   >
                     {abortPending
@@ -2513,7 +2517,7 @@ export default function CCStream() {
                     exit={{ opacity: 0, scale: 0.8 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                     onClick={handleRestart}
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center text-black hover:opacity-60 transition-opacity"
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center text-on-surface hover:opacity-60 transition-opacity"
                     title="New session"
                   >
                     <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />

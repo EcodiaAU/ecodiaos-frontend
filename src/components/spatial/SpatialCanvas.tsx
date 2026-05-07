@@ -32,6 +32,11 @@ export function SpatialCanvas() {
 
   const direction = directionRef.current
 
+  // The cortex scene is the chat surface — full-bleed, no scene-container
+  // padding, no scene-container scroll. Inner CCStream owns the only scroll.
+  const isFullBleed = location.pathname.startsWith('/cortex')
+  const sceneClass = isFullBleed ? 'scene-container scene-full-bleed' : 'scene-container'
+
   return (
     <SpatialViewport className="z-20">
       <AnimatePresence mode="popLayout" initial={false} custom={direction}>
@@ -42,7 +47,7 @@ export function SpatialCanvas() {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="scene-container"
+          className={sceneClass}
           style={{ willChange: 'transform, opacity' }}
         >
           {outlet}

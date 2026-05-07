@@ -17,12 +17,25 @@
     /* iOS rubber-band overscroll containment — page no longer bounces
        past its own edges, gives a native app feel. */
     overscroll-behavior-y: none;
+    /* Lock document scroll: only the chat-message list inside the shell
+       is scrollable (page-level full-bleed shell, static input footer). */
+    height: 100%;
+    /* Charcoal background extends edge-to-edge including behind the iOS
+       keyboard / safe-area inset — no black gap above the home indicator. */
+    background-color: #1a1a1a;
+    color: #f5efe6;
   }
 
   body {
     /* Honour safe-area insets globally; child containers can opt in
        via env(safe-area-inset-*) where they need explicit padding. */
     -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+  }
+
+  #root {
+    background-color: #1a1a1a;
+    height: 100%;
   }
 
   #root {
@@ -469,10 +482,14 @@
   }
 }
 
-/* Full-bleed scene — removes all .scene-container padding (e.g. Cortex chat) */
+/* Full-bleed scene — removes all .scene-container padding (e.g. Cortex chat).
+   Also kills the .scene-container outer scroll so the chat shell's inner
+   message-list scroll is the ONLY scrollable region. Page itself stays
+   exactly viewport-height with a static input footer. */
 .scene-full-bleed.scene-container,
 .scene-full-bleed .scene-container {
   padding: 0 !important;
+  overflow: hidden !important;
 }
 
 /* Reduced motion */
