@@ -14,7 +14,22 @@ export function AppShell() {
   return (
     <MetabolicProvider>
       <SpatialDepthProvider>
-        <div className="h-screen w-screen overflow-hidden bg-surface">
+        {/*
+          Mobile-hardened root container. `100dvh` follows the iOS Safari /
+          Capacitor WebView viewport as the URL bar / home-indicator inset
+          changes (h-screen alone snaps awkwardly). `max-w-screen` clamps
+          horizontal bleed alongside the html/body overflow-x:hidden in
+          index.css. Children that need to clear the iPhone notch / home
+          indicator opt in via env(safe-area-inset-*) where they live.
+        */}
+        <div
+          className="w-screen overflow-hidden bg-surface"
+          style={{
+            height: '100dvh',
+            minHeight: '100vh',
+            maxWidth: '100vw',
+          }}
+        >
           <AuroraBackground />
           <GlobalConstellation />
           <SpatialEdgeLight />

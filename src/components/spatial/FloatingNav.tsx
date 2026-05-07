@@ -298,12 +298,16 @@ export function FloatingNav() {
         ))}
       </motion.nav>
 
-      {/* ─── Mobile: bottom glass bar ─── */}
+      {/* ─── Mobile: bottom glass bar ───
+          paddingBottom uses env(safe-area-inset-bottom) so the bar lifts
+          above the iPhone home indicator instead of being covered by it.
+      */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around px-2 py-2 md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around px-2 pt-2 md:hidden"
         style={{
           backgroundColor: 'rgba(255, 255, 255, 0.52)',
           boxShadow: '0 -12px 40px -10px rgba(27, 122, 61, 0.05), inset 0 1px 0 rgba(255,255,255,0.4)',
+          paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
         }}
       >
         {NAV_LINKS.map((scene) => {

@@ -2248,8 +2248,16 @@ export default function CCStream() {
       {/* Top-right chrome cluster — stacks horizontally so neither the queue
           pill nor the connection state indicator covers the other. Connection
           indicator sits further left (subtle, always-on), queue pill hugs the
-          right edge (actionable, click-to-open). */}
-      <div className="absolute top-3 right-4 z-40 flex items-center gap-2">
+          right edge (actionable, click-to-open). On iOS, lifts past the
+          notch via env(safe-area-inset-top) and away from the rounded
+          corner via env(safe-area-inset-right). */}
+      <div
+        className="absolute z-40 flex items-center gap-2"
+        style={{
+          top: 'calc(0.75rem + env(safe-area-inset-top))',
+          right: 'calc(1rem + env(safe-area-inset-right))',
+        }}
+      >
         {/* Pinnacle P1 — always-visible connection state chip. */}
         <div className="pointer-events-none">
           <ConnectionStateIndicator />
@@ -2299,8 +2307,12 @@ export default function CCStream() {
         )}
       </AnimatePresence>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto max-w-5xl px-6 lg:px-10">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin"
+        style={{ WebkitOverflowScrolling: 'touch' as const }}
+      >
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-10">
           {/* Ambient welcome — quiet. Vitals + any pending actions only. */}
           {!hasMessages && status !== 'streaming' && (
             <motion.div
@@ -2378,8 +2390,16 @@ export default function CCStream() {
         )}
       </AnimatePresence>
 
-      {/* Input area — sits near the bottom, no background, black underline */}
-      <div className="w-full px-6 pb-10 pt-2 lg:px-10">
+      {/* Input area — sits near the bottom, no background, black underline.
+          Mobile: tighter side padding + bottom safe-area + room for the
+          bottom nav bar so the input doesn't sit beneath the home indicator
+          or tabs. Desktop scaling preserved via lg: variants. */}
+      <div
+        className="w-full px-4 sm:px-6 pt-2 lg:px-10"
+        style={{
+          paddingBottom: 'calc(2.5rem + env(safe-area-inset-bottom))',
+        }}
+      >
         <div className="mx-auto max-w-3xl relative">
           {/* Queued confirmation flash */}
           <AnimatePresence>
