@@ -32,9 +32,7 @@ export default function LoginPage() {
         className="pointer-events-none fixed inset-0"
         style={{
           background: `
-            radial-gradient(ellipse 80% 60% at 20% 80%, rgba(46, 204, 113, 0.14), transparent),
-            radial-gradient(ellipse 60% 80% at 80% 20%, rgba(251, 191, 36, 0.12), transparent),
-            radial-gradient(ellipse 50% 50% at 50% 50%, rgba(27, 122, 61, 0.08), transparent)
+            radial-gradient(ellipse 60% 60% at 50% 50%, rgba(46, 204, 113, 0.04), transparent)
           `,
         }}
       />
@@ -43,32 +41,36 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 80, damping: 20, mass: 1 }}
-        className="relative z-10 w-full max-w-sm glass-elevated rounded-3xl p-10"
+        className="relative z-10 w-full max-w-xs rounded-lg p-8"
+        style={{ border: '1px solid rgba(255,255,255,0.06)' }}
       >
-        <div className="mb-10">
-          <span className="text-label-md font-display uppercase tracking-[0.2em] text-on-surface-muted">
+        <div className="mb-8">
+          <span className="text-[10px] uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.35)' }}>
             Ecodia OS
           </span>
-          <h1 className="mt-3 font-display text-display-md font-light text-on-surface">
-            Welcome
-          </h1>
         </div>
 
         <input
           type="password"
-          placeholder="Password"
+          placeholder=""
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-xl bg-surface-container-low px-5 py-3 text-sm text-on-surface placeholder-on-surface-muted transition-colors focus:bg-surface-container-lowest focus:outline-none"
+          className="w-full bg-transparent px-0 py-2 text-sm text-on-surface placeholder-on-surface-muted/30 outline-none"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}
           autoFocus
         />
 
         <button
           type="submit"
           disabled={loading || !password}
-          className="btn-primary-gradient mt-6 w-full rounded-2xl px-6 py-3 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+          className="mt-6 w-full rounded-md px-4 py-2.5 text-xs font-mono uppercase tracking-wider transition-all disabled:opacity-20"
+          style={{
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            color: 'rgba(255,255,255,0.80)',
+          }}
         >
-          {loading ? 'Authenticating...' : 'Enter'}
+          {loading ? '...' : 'Enter'}
         </button>
       </motion.form>
     </div>

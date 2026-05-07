@@ -96,12 +96,12 @@ function AttachmentChip({ file, onRemove }: { file: AttachedFile; onRemove: () =
 
 // ─── Chromatic Vitals — green+gold ambient data ─────────────────────
 
-function ChromaticVital({ icon: Icon, value, label, color, glowColor, delay = 0 }: {
+function ChromaticVital({ icon: Icon, value, label, color, delay = 0 }: {
   icon: typeof Mail
   value: string | number
   label: string
   color: string
-  glowColor: string
+  glowColor?: string
   delay?: number
 }) {
   return (
@@ -109,25 +109,18 @@ function ChromaticVital({ icon: Icon, value, label, color, glowColor, delay = 0 
       initial={{ opacity: 0, y: 10, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 80, damping: 20, delay }}
-      className="group relative flex items-center gap-2.5 rounded-2xl px-4 py-2.5 holo-border"
+      className="group relative flex items-center gap-2.5 rounded-md px-3 py-2"
       style={{
-        background: `linear-gradient(135deg, rgba(30,34,31,0.80), rgba(22,26,23,0.70))`,
-        boxShadow: `0 8px 24px -8px ${glowColor}, inset 0 1px 0 rgba(255,255,255,0.06)`,
-        border: '1px solid rgba(255,255,255,0.09)',
-        borderTopColor: 'rgba(255,255,255,0.13)',
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.06)',
       }}
     >
-      <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{
-        background: `linear-gradient(135deg, ${color}20, ${color}08)`,
-        boxShadow: `0 0 12px ${color}15`,
-      }}>
-        <Icon className="h-3.5 w-3.5" style={{ color }} strokeWidth={1.75} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold font-mono tabular-nums" style={{ color: '#f5efe6' }}>
+      <Icon className="h-3 w-3 flex-shrink-0" style={{ color, opacity: 0.7 }} strokeWidth={1.5} />
+      <div className="min-w-0 flex items-baseline gap-1.5">
+        <p className="text-sm font-mono tabular-nums" style={{ color: 'rgba(255,255,255,0.90)' }}>
           {value}
         </p>
-        <p className="text-[10px] uppercase tracking-[0.08em] text-on-surface-muted/40 font-mono">{label}</p>
+        <p className="text-[9px] uppercase tracking-[0.08em] font-mono" style={{ color: 'rgba(255,255,255,0.30)' }}>{label}</p>
       </div>
     </motion.div>
   )
@@ -213,17 +206,15 @@ function PendingActionsBanner() {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 80, damping: 22, delay: 0.4 }}
-      className="flex items-center gap-3 rounded-2xl px-5 py-3 mx-auto max-w-md"
+      className="flex items-center gap-3 rounded-md px-4 py-2.5 mx-auto max-w-md"
       style={{
-        background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(251,191,36,0.03))',
-        border: '1px solid rgba(217,119,6,0.12)',
-        boxShadow: '0 4px 20px -4px rgba(217,119,6,0.10)',
+        border: '1px solid rgba(255,255,255,0.06)',
       }}
     >
       <motion.div
-        className="h-2 w-2 rounded-full"
-        style={{ backgroundColor: '#F59E0B', boxShadow: '0 0 8px rgba(245,158,11,0.4)' }}
-        animate={{ scale: [1, 1.3, 1], opacity: [0.6, 1, 0.6] }}
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: 'rgba(255,255,255,0.50)' }}
+        animate={{ opacity: [0.3, 0.8, 0.3] }}
         transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
       />
       <span className="text-xs text-on-surface-variant">
@@ -411,10 +402,9 @@ const UserMessage = memo(function UserMessage({ message }: { message: OSSessionM
       transition={{ type: 'spring', stiffness: 90, damping: 22 }}
       className="py-3"
     >
-      <div className="rounded-2xl px-5 py-3.5 max-w-full" style={{
-        background: 'linear-gradient(135deg, rgba(27,122,61,0.18), rgba(46,204,113,0.10))',
-        border: '1px solid rgba(46,204,113,0.22)',
-        boxShadow: '0 2px 12px -4px rgba(27,122,61,0.25)',
+      <div className="rounded-lg px-4 py-3 max-w-full" style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
       }}>
         <p
           className="text-sm leading-relaxed text-on-surface font-medium"
@@ -497,9 +487,8 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
                 transition={{ type: 'spring', stiffness: 100, damping: 18, delay: i * 0.03 }}
                 className="flex items-center gap-1.5 rounded-xl px-3 py-1.5"
                 style={{
-                  background: `linear-gradient(135deg, ${accent.color}08, ${accent.color}04)`,
-                  border: `1px solid ${accent.color}15`,
-                  boxShadow: `0 2px 8px -2px ${accent.glow}, inset 0 1px 0 rgba(255,255,255,0.07)`,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)',
                 }}
               >
                 <motion.div
@@ -544,14 +533,11 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
  */
 function PersistedToolBlock({ tool, delay }: { tool: LiveToolCall; delay: number }) {
   const [expanded, setExpanded] = useState(false)
-  const accent = getToolAccent(tool.name)
   const isError = tool.status === 'error' || tool.isError
-  const dotColor = isError ? '#F87171' : accent.color
-  const textColor = isError ? '#FCA5A5cc' : `${accent.color}cc`
-  const border = isError ? 'rgba(248,113,113,0.30)' : `${accent.color}22`
-  const bg = isError
-    ? 'linear-gradient(135deg, rgba(220,38,38,0.14), rgba(194,91,72,0.07))'
-    : `linear-gradient(135deg, ${accent.color}12, ${accent.color}06)`
+  const dotColor = isError ? '#F87171' : 'rgba(255,255,255,0.40)'
+  const textColor = isError ? '#FCA5A5' : 'rgba(255,255,255,0.60)'
+  const border = isError ? 'rgba(248,113,113,0.20)' : 'rgba(255,255,255,0.06)'
+  const bg = 'transparent'
 
   const summary = toolSummaryLine(tool.name, tool.input)
   const resultSummary = toolResultSummary(tool.result)
@@ -704,9 +690,8 @@ function ThinkingBlock({ content }: { content: string }) {
     <motion.div
       className="rounded-2xl overflow-hidden"
       style={{
-        background: 'linear-gradient(135deg, rgba(27,122,61,0.14), rgba(46,204,113,0.07))',
-        border: '1px solid rgba(46,204,113,0.20)',
-        boxShadow: '0 2px 12px -4px rgba(27,122,61,0.20)',
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.05)',
       }}
       layout
     >
@@ -757,9 +742,9 @@ const FinalisedMarkdown = memo(function FinalisedMarkdown({ text }: { text: stri
 })
 
 const STREAM_DOTS = [
-  { color: '#5FE89D', delay: 0 },
-  { color: '#2ECC71', delay: 0.15 },
-  { color: '#FBBF24', delay: 0.3 },
+  { color: 'rgba(255,255,255,0.60)', delay: 0 },
+  { color: 'rgba(255,255,255,0.40)', delay: 0.15 },
+  { color: 'rgba(255,255,255,0.20)', delay: 0.3 },
 ] as const
 
 /** Friendly tool name — strip mcp__ prefix and server name for readability */
@@ -1050,9 +1035,9 @@ function TurnTelemetryRow({ t }: { t: TurnTelemetry }) {
       whileHover={{ opacity: 0.95 }}
       className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 rounded-lg text-[10px] font-mono tracking-wide cursor-pointer select-none"
       style={{
-        color: 'rgba(46,204,113,0.70)',
-        background: 'rgba(27,122,61,0.10)',
-        border: '1px solid rgba(46,204,113,0.18)',
+        color: 'rgba(255,255,255,0.35)',
+        background: 'transparent',
+        border: 'none',
       }}
     >
       <span>{fmt(inputTok)}→{fmt(t.outputTokens ?? 0)}</span>
@@ -1365,7 +1350,7 @@ const StreamingIndicator = memo(function StreamingIndicator({ text, tools, think
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="flex items-start gap-2 px-3 py-2 rounded-xl"
-          style={{ background: 'rgba(27,122,61,0.14)', border: '1px solid rgba(46,204,113,0.20)' }}
+          style={{ borderLeft: '2px solid rgba(255,255,255,0.10)' }}
         >
           <Brain className="h-3 w-3 mt-0.5 flex-shrink-0" style={{ color: '#2ECC71' }} strokeWidth={1.75} />
           <span className="text-[11px] text-on-surface-muted/75 leading-relaxed line-clamp-2 font-mono">
@@ -1502,9 +1487,9 @@ function QueuePill({ onClick, drawerOpen }: { onClick: () => void; drawerOpen: b
       onClick={onClick}
       className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-mono"
       style={{
-        background: 'rgba(27,122,61,0.18)',
-        border: '1px solid rgba(46,204,113,0.30)',
-        color: '#5FE89D',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        color: 'rgba(255,255,255,0.70)',
       }}
     >
       {pulse && (
@@ -1802,9 +1787,8 @@ function QueueDrawer({ onClose }: { onClose: () => void }) {
         transition={{ type: 'spring', stiffness: 280, damping: 28 }}
         className="fixed top-0 right-0 bottom-0 z-40 flex flex-col overflow-hidden w-full sm:w-[40vw] sm:max-w-[480px]"
         style={{
-          background: '#1a1c1a',
-          borderLeft: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '-8px 0 32px -8px rgba(0,0,0,0.40)',
+          background: '#050505',
+          borderLeft: '1px solid rgba(255,255,255,0.06)',
         }}
       >
         {/* Header */}
@@ -2462,7 +2446,7 @@ export default function CCStream() {
 
           {/* Input row — no background, single cream bottom border on charcoal.
               (Interrupt strip removed — the stop button in the row is enough.) */}
-          <div className="flex items-end gap-3 py-3" style={{ borderBottom: '1px solid rgba(245,239,230,0.25)' }}>
+          <div className="flex items-end gap-3 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             {/* Paperclip — cream */}
             <label htmlFor={fileInputId} className="flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center text-on-surface hover:opacity-60 transition-opacity">
               <Paperclip className="h-4 w-4" strokeWidth={1.75} />

@@ -51,9 +51,9 @@ export function ForksPill({ onClick, drawerOpen }: { onClick: () => void; drawer
       onClick={onClick}
       className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-mono"
       style={{
-        background: 'rgba(212,175,55,0.15)',
-        border: '1px solid rgba(251,191,36,0.32)',
-        color: '#FBBF24',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        color: 'rgba(255,255,255,0.70)',
       }}
       aria-label={`${count} forks running`}
     >
@@ -215,12 +215,12 @@ export function ForksDrawer({ onClose }: { onClose: () => void }) {
         exit={{ x: 24, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
         className="relative h-full w-[420px] max-w-[92vw] overflow-y-auto shadow-2xl"
-        style={{ background: '#1a1c1a' }}
+        style={{ background: '#050505' }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Parallel forks"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b" style={{ background: '#1a1c1a', borderColor: 'rgba(255,255,255,0.08)' }}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b" style={{ background: '#050505', borderColor: 'rgba(255,255,255,0.06)' }}>
           <div className="flex items-center gap-2">
             <Brain className="h-4 w-4" strokeWidth={1.75} style={{ color: '#FBBF24' }} />
             <span className="text-[13px] font-medium" style={{ color: '#e8dfd0' }}>

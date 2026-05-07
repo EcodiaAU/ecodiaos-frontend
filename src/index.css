@@ -20,10 +20,8 @@
     /* Lock document scroll: only the chat-message list inside the shell
        is scrollable (page-level full-bleed shell, static input footer). */
     height: 100%;
-    /* Charcoal background extends edge-to-edge including behind the iOS
-       keyboard / safe-area inset — no black gap above the home indicator. */
-    background-color: #1a1a1a;
-    color: #f5efe6;
+    background-color: #000000;
+    color: #e0e0e0;
   }
 
   body {
@@ -34,7 +32,7 @@
   }
 
   #root {
-    background-color: #1a1a1a;
+    background-color: #000000;
     height: 100%;
   }
 
@@ -51,51 +49,37 @@
   }
 
   ::selection {
-    background-color: rgba(20, 184, 130, 0.18);
-    color: #151716;
+    background-color: rgba(46, 204, 113, 0.20);
+    color: #ffffff;
   }
 
   ::-webkit-scrollbar {
-    width: 4px;
+    width: 3px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(13, 124, 90, 0.10);
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(13, 124, 90, 0.20);
+    background: rgba(255, 255, 255, 0.15);
   }
 }
 
 @layer components {
-  /* === Glass Depth System — dark charcoal tinted === */
+  /* === Glass Depth System — void black, barely-there edges === */
   .glass {
-    background: rgba(30, 32, 30, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-top-color: rgba(255, 255, 255, 0.12);
-    border-left-color: rgba(255, 255, 255, 0.10);
-    border-bottom-color: rgba(0, 0, 0, 0.20);
-    border-right-color: rgba(0, 0, 0, 0.15);
-    box-shadow:
-      0 20px 50px -12px rgba(0, 0, 0, 0.30),
-      0 8px 20px -8px rgba(27, 122, 61, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 0 40px -20px rgba(46, 204, 113, 0.04);
   }
 
   .glass-elevated {
-    background: rgba(36, 39, 36, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-top-color: rgba(255, 255, 255, 0.16);
-    border-left-color: rgba(255, 255, 255, 0.12);
-    border-bottom-color: rgba(0, 0, 0, 0.25);
-    border-right-color: rgba(0, 0, 0, 0.20);
-    box-shadow:
-      0 32px 64px -16px rgba(0, 0, 0, 0.40),
-      0 12px 28px -8px rgba(27, 122, 61, 0.12),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 60px -20px rgba(46, 204, 113, 0.06);
   }
 
   /* === Holographic Border — green + gold sweep === */
@@ -138,15 +122,14 @@
       0 0 40px rgba(217, 119, 6, 0.03);
   }
 
-  /* === Primary gradient button — green spectrum === */
   .btn-primary-gradient {
-    background: linear-gradient(135deg, #126B30, #1B7A3D, #2ECC71);
+    background: rgba(255, 255, 255, 0.08);
     color: white;
-    border: none;
-    box-shadow: 0 4px 16px -4px rgba(27, 122, 61, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
   }
   .btn-primary-gradient:hover {
-    box-shadow: 0 8px 24px -4px rgba(46, 204, 113, 0.4), 0 0 0 1px rgba(46, 204, 113, 0.2);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.18);
   }
 
   .scene-container {
@@ -219,52 +202,39 @@
   .cortex-prose ul { margin: 0.5rem 0; padding-left: 1.25rem; list-style-type: disc; }
   .cortex-prose ol { margin: 0.5rem 0; padding-left: 1.25rem; list-style-type: decimal; }
   .cortex-prose li { margin: 0.125rem 0; }
-  .cortex-prose li::marker { color: rgba(46, 204, 113, 0.70); }
+  .cortex-prose li::marker { color: rgba(255, 255, 255, 0.25); }
 
-  /* ── Bold: bright cream ── */
   .cortex-prose strong {
-    color: #f5efe6;
-    font-weight: 600;
+    color: #ffffff;
+    font-weight: 500;
   }
 
-  /* ── Italic: bright gold ── */
   .cortex-prose em {
-    color: #FBBF24;
+    color: rgba(46, 204, 113, 0.90);
     font-style: italic;
   }
 
-  /* ── Links: gold filaments with animated underline ── */
   .cortex-prose a {
-    color: #D97706;
+    color: rgba(46, 204, 113, 0.90);
     text-decoration: none;
-    font-weight: 500;
-    background: linear-gradient(90deg, rgba(217,119,6,0.15), rgba(251,191,36,0.10));
-    background-size: 100% 1px;
-    background-position: 0 100%;
-    background-repeat: no-repeat;
-    padding-bottom: 1px;
-    transition: all 0.3s ease;
+    font-weight: 400;
+    border-bottom: 1px solid rgba(46, 204, 113, 0.25);
+    transition: all 0.2s ease;
   }
   .cortex-prose a:hover {
-    color: #F59E0B;
-    background: linear-gradient(90deg, rgba(245,158,11,0.25), rgba(251,191,36,0.15));
-    background-size: 100% 2px;
-    background-position: 0 100%;
-    background-repeat: no-repeat;
-    text-shadow: 0 0 12px rgba(245,158,11,0.15);
+    color: #5FE89D;
+    border-bottom-color: rgba(95, 232, 157, 0.50);
   }
 
-  /* ── Inline code: system identifier — green terminal style ── */
   .cortex-prose code {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.78em;
     font-weight: 400;
-    color: #5FE89D;
-    background: linear-gradient(135deg, rgba(27,122,61,0.22), rgba(46,204,113,0.12));
-    border: 1px solid rgba(46,204,113,0.22);
-    border-radius: 0.5rem;
-    padding: 0.15em 0.5em;
-    box-shadow: 0 0 8px rgba(46,204,113,0.12);
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    padding: 0.12em 0.4em;
     letter-spacing: 0.02em;
   }
 
@@ -274,20 +244,16 @@
      instead of dragging the whole page sideways on mobile.
      -webkit-overflow-scrolling:touch keeps the inner scroll momentum-based. */
   .cortex-prose pre {
-    margin: 1rem 0;
-    border-radius: 1.25rem;
+    margin: 0.75rem 0;
+    border-radius: 8px;
     overflow-x: auto;
     overflow-y: hidden;
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
     position: relative;
-    background: rgba(12, 16, 13, 0.85);
-    border: 1px solid rgba(46,204,113,0.18);
-    box-shadow:
-      0 8px 24px -8px rgba(0,0,0,0.40),
-      inset 0 1px 0 rgba(255,255,255,0.05),
-      inset 0 -1px 0 rgba(46,204,113,0.06);
-    padding: 1.25rem 1.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 1rem 1.25rem;
   }
   /* Code inside <pre> may be wider than its parent — that's the point of
      the inner scroll. But inline code still breaks. */
@@ -301,59 +267,44 @@
     word-break: break-word;
   }
   .cortex-prose pre::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(27,122,61,0.015) 2px,
-      rgba(27,122,61,0.015) 4px
-    );
-    pointer-events: none;
+    display: none;
   }
   .cortex-prose pre code {
     background: transparent;
     border: none;
     padding: 0;
     box-shadow: none;
-    color: #d4f4e8;
+    color: rgba(255, 255, 255, 0.75);
     font-size: 0.8rem;
-    line-height: 1.7;
+    line-height: 1.6;
     letter-spacing: 0.01em;
   }
 
-  /* ── Headings: display type with gold accent line ── */
   .cortex-prose h1 {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 1.25rem;
-    font-weight: 500;
-    color: #f5efe6;
+    font-size: 1.1rem;
+    font-weight: 400;
+    color: #ffffff;
     margin-top: 1.5rem;
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(217,119,6,0.35);
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.01em;
   }
   .cortex-prose h2 {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 1.05rem;
-    font-weight: 500;
-    color: #e8dfd0;
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.90);
     margin-top: 1.25rem;
-    margin-bottom: 0.5rem;
-    padding-left: 0.75rem;
-    border-left: 2px solid rgba(46,204,113,0.55);
+    margin-bottom: 0.4rem;
+    letter-spacing: -0.01em;
   }
   .cortex-prose h3 {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 500;
-    color: #c8bfb0;
+    color: rgba(255, 255, 255, 0.70);
     margin-top: 1rem;
     margin-bottom: 0.25rem;
-    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
   }
 
   /* ── Tables: holographic data grids ──
@@ -370,15 +321,12 @@
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
-    margin: 1rem 0;
+    margin: 0.75rem 0;
     border-collapse: separate;
     border-spacing: 0;
-    border-radius: 1rem;
-    background: rgba(20, 24, 21, 0.80);
-    border: 1px solid rgba(46,204,113,0.18);
-    box-shadow:
-      0 8px 24px -8px rgba(0,0,0,0.35),
-      inset 0 1px 0 rgba(255,255,255,0.05);
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.06);
   }
   /* Inner table layout — restore proper table row/cell behaviour now that
      the outer element is display:block. */
@@ -391,28 +339,26 @@
   }
 
   .cortex-prose thead {
-    background: linear-gradient(135deg, rgba(27,122,61,0.18), rgba(46,204,113,0.08));
+    background: rgba(255, 255, 255, 0.03);
   }
 
   .cortex-prose th {
-    font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: rgba(46,204,113,0.85);
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.45);
     text-align: left;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid rgba(46,204,113,0.18);
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     white-space: nowrap;
   }
 
   .cortex-prose td {
     font-size: 0.8rem;
-    padding: 0.6rem 1rem;
-    color: #c8bfb0;
-    border-bottom: 1px solid rgba(46,204,113,0.08);
-    transition: background 0.2s ease;
+    padding: 0.5rem 0.8rem;
+    color: rgba(255, 255, 255, 0.70);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 
   .cortex-prose tr:last-child td {
@@ -420,33 +366,29 @@
   }
 
   .cortex-prose tbody tr:hover td {
-    background: rgba(46,204,113,0.08);
+    background: rgba(255, 255, 255, 0.03);
   }
 
-  /* Alternate row scanline effect */
   .cortex-prose tbody tr:nth-child(even) td {
-    background: rgba(46,204,113,0.04);
+    background: rgba(255, 255, 255, 0.015);
   }
   .cortex-prose tbody tr:nth-child(even):hover td {
-    background: rgba(46,204,113,0.10);
+    background: rgba(255, 255, 255, 0.04);
   }
 
-  /* ── Blockquotes: green left accent with subtle glow ── */
   .cortex-prose blockquote {
-    border-left: 2px solid rgba(46,204,113,0.60);
+    border-left: 2px solid rgba(255, 255, 255, 0.15);
     padding-left: 1rem;
     margin: 0.75rem 0;
-    color: #a89e8e;
+    color: rgba(255, 255, 255, 0.55);
     font-style: italic;
-    box-shadow: -4px 0 12px -4px rgba(46,204,113,0.18);
   }
 
-  /* ── Horizontal rules: gold gradient line ── */
   .cortex-prose hr {
     border: none;
     height: 1px;
     margin: 1.5rem 0;
-    background: linear-gradient(90deg, transparent, rgba(217,119,6,0.45), rgba(46,204,113,0.35), transparent);
+    background: rgba(255, 255, 255, 0.08);
   }
 }
 

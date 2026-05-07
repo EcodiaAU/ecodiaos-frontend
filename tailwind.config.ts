@@ -5,20 +5,20 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Charcoal-bg + cream-text inversion (permanent, not toggle).
-        // surface = backgrounds (charcoal family), on-surface = text (cream family).
+        // Pure black base — JARVIS-grade ambient OS surface.
+        // surface = backgrounds (black family), on-surface = text (white family).
         surface: {
-          DEFAULT: '#1a1a1a',
-          dim: '#141414',
-          'container-low': '#1f1f1f',
-          container: '#242424',
-          'container-high': '#2a2a2a',
-          'container-lowest': '#0f0f0f',
+          DEFAULT: '#000000',
+          dim: '#000000',
+          'container-low': '#0a0a0a',
+          container: '#111111',
+          'container-high': '#181818',
+          'container-lowest': '#000000',
         },
         'on-surface': {
-          DEFAULT: '#f5efe6',
-          variant: '#e8dfd0',
-          muted: '#a89e8e',
+          DEFAULT: '#e0e0e0',
+          variant: '#b0b0b0',
+          muted: '#666666',
         },
         primary: {
           DEFAULT: '#1B7A3D',
