@@ -411,12 +411,24 @@ const UserMessage = memo(function UserMessage({ message }: { message: OSSessionM
       transition={{ type: 'spring', stiffness: 90, damping: 22 }}
       className="py-3"
     >
-      <div className="rounded-2xl px-5 py-3.5" style={{
+      <div className="rounded-2xl px-5 py-3.5 max-w-full" style={{
         background: 'linear-gradient(135deg, rgba(27,122,61,0.05), rgba(46,204,113,0.03))',
         border: '1px solid rgba(27,122,61,0.08)',
         boxShadow: '0 2px 12px -4px rgba(27,122,61,0.06)',
       }}>
-        <p className="text-sm leading-relaxed text-on-surface font-medium">{cleaned}</p>
+        <p
+          className="text-sm leading-relaxed text-on-surface font-medium"
+          style={{
+            // Mobile: long words / pasted URLs / un-spaced strings (logs,
+            // tokens, fork ids) MUST wrap inside the bubble rather than
+            // forcing the bubble wider than the viewport.
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {cleaned}
+        </p>
       </div>
     </motion.div>
   )
