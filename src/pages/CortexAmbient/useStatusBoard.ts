@@ -5,6 +5,9 @@
  * shape needed by the constellation view. Survives empty/error states
  * gracefully (returns []).
  *
+ * NB: paths here are relative to the api client baseURL (which is already
+ * '/api'). Do NOT prefix with '/api/' or every request 404s as /api/api/...
+ *
  * If a richer store-backed projection is added later, swap this for a
  * zustand subscription. For now polling is enough at status_board scale
  * (typically <120 active rows).
@@ -28,10 +31,10 @@ export interface StatusRow {
 }
 
 const ENDPOINTS = [
-  '/api/status-board/active',
-  '/api/status_board/active',
-  '/api/status-board',
-  '/api/cortex/status-board',
+  '/status-board/active',
+  '/status_board/active',
+  '/status-board',
+  '/cortex/status-board',
 ]
 
 async function tryFetch(): Promise<StatusRow[]> {

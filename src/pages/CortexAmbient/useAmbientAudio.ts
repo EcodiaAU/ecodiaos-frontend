@@ -17,7 +17,7 @@ export function useAmbientAudio(enabled: boolean, intensity: number) {
   const lastIntensityRef = useRef<number>(intensity)
 
   useEffect(() => {
-    // When disabled, do nothing here — the cleanup function from the prior
+    // When disabled, do nothing here - the cleanup function from the prior
     // enabled-effect run is the single tear-down path. Calling close() in
     // both branches caused a double-close ("Cannot close a closed AudioContext"
     // surfaces as Uncaught (in promise) InvalidStateError because
@@ -54,7 +54,7 @@ export function useAmbientAudio(enabled: boolean, intensity: number) {
 
     return () => {
       // Single cleanup path: fade gain, then stop oscillators, then close ctx.
-      // Each step is independently guarded — close() promise rejection is
+      // Each step is independently guarded - close() promise rejection is
       // caught instead of becoming "Uncaught (in promise) InvalidStateError".
       try {
         gain.gain.setTargetAtTime(0, ctx.currentTime, 0.4)

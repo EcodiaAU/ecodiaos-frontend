@@ -1,13 +1,13 @@
 /**
- * ChatBeam - the conversation stream as a rising focal beam.
+ * ChatBeam - the conversation as a rising focal beam (3D ambience).
  *
- * Recent assistant + user messages render as floating glowing planes
- * drifting upward through the scene. Older messages dim and recede.
- * The active turn (last message) is brightest. The beam itself is a
- * vertical tube of soft ember light anchored at the conductor.
+ * Round-2 polish, 2026-05-08, fork_mowe5tuh_f2ddd3:
+ *   The 2D ChatLog overlay is now the LEAD readable surface. ChatBeam
+ *   stays as 3D ambience only - 3 (was 5) recent message cards drifting
+ *   up the conductor's beam, with reduced opacity so they coexist with
+ *   the new readable overlay without competing for attention.
  *
- * Reads from useOsSessionStore. Renders only the last 8 messages by
- * default to keep the scene readable.
+ * Reads from useOsSessionStore.
  */
 import React, { useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
@@ -16,9 +16,12 @@ import * as THREE from 'three'
 import { useOSSessionStore, type OSSessionMessage } from '@/store/osSessionStore'
 import { AMBIENT_PALETTE } from './palette'
 
-const MAX_MESSAGES = 5
+const MAX_MESSAGES = 3
+// Global ambience attenuation. The 2D ChatLog is the readable surface;
+// the 3D cards are decorative drifters that should not be visually loud.
+const AMBIENCE = 0.35
 const BEAM_HEIGHT = 6
-// Vertical anchor — lifted above the conductor's torus-knot lattice (radius 1.35)
+// Vertical anchor - lifted above the conductor's torus-knot lattice (radius 1.35)
 // so the rising message planes never overlap the central presence.
 const BEAM_BASE_Y = 2.4
 const MESSAGE_SPACING = 0.72
@@ -55,8 +58,8 @@ export function ChatBeam() {
         />
       </mesh>
 
-      {/* Message planes drifting upward — newest at bottom of beam, oldest at top.
-          Stack stays inside the visible camera frustum (y ≈ 2.4 → 5.2 at z = 0). */}
+      {/* Message planes drifting upward - newest at bottom of beam, oldest at top.
+          Stack stays inside the visible camera frustum (y ~= 2.4 to 5.2 at z = 0). */}
       {recent.map((msg, idx) => {
         const offsetFromTop = recent.length - 1 - idx // 0 = newest at bottom of beam
         const isActive = idx === recent.length - 1
@@ -86,7 +89,8 @@ interface MessagePlaneProps {
 function MessagePlane({ content, role, yOffset, active, ageIndex }: MessagePlaneProps) {
   const groupRef = React.useRef<THREE.Group | null>(null)
   const startY = useMemo(() => yOffset, [yOffset])
-  const opacityTarget = active ? 1.0 : Math.max(0.12, 0.85 - ageIndex * 0.12)
+  // Ambience attenuation - the 2D overlay carries readability; cards are decorative.
+  const opacityTarget = (active ? 1.0 : Math.max(0.12, 0.85 - ageIndex * 0.12)) * AMBIENCE
   const tint = role === 'user' ? AMBIENT_PALETTE.amber : AMBIENT_PALETTE.coreGlow
 
   useFrame((state) => {

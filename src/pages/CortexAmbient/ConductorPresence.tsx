@@ -11,10 +11,11 @@
  * The signature ember glow at the core is the brand surface. Everything
  * else in the scene reads relative to it.
  */
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useForksStore, selectActiveForks } from '@/store/forksStore'
+import { useOSSessionStore } from '@/store/osSessionStore'
 import { AMBIENT_PALETTE } from './palette'
 
 const coreVertex = /* glsl */ `
@@ -63,7 +64,18 @@ export function ConductorPresence() {
   const haloRef = useRef<THREE.Mesh | null>(null)
 
   const forks = useForksStore((s) => s.forks)
-  const intensityTarget = useMemo(() => {
+  const status = useOSSessionStore((s) => s.status)
+  const messageCount = useOSSessionStore((s) => s.messages.length)
+
+  // Brief flash on every new message (incoming or outgoing). The presence
+  // visibly registers that a message landed - without this, sending feels
+  // like shouting into a void.
+  const messageFlashRef = useRef<number>(0)
+  useEffect(() => {
+    messageFlashRef.current = 1.0
+  }, [messageCount])
+
+  const baseIntensity = useMemo(() => {
     const active = selectActiveForks(forks).length
     // 0 forks -> 0.05 hum, 1 -> 0.4, 5+ -> 1.0
     return Math.min(1, 0.05 + active * 0.18)
@@ -78,14 +90,31 @@ export function ConductorPresence() {
 
   useFrame((state, dt) => {
     uniforms.uTime.value = state.clock.elapsedTime
-    // smooth intensity to target
-    uniforms.uIntensity.value += (intensityTarget - uniforms.uIntensity.value) * Math.min(1, dt * 1.2)
+
+    // Streaming bumps intensity floor up so the presence visibly thinks.
+    // Add a fast-decaying flash when a new message arrives.
+    messageFlashRef.current = Math.max(0, messageFlashRef.current - dt * 1.4)
+    const streamingBoost = status === 'streaming' ? 0.55 : 0
+    const errorBoost = status === 'error' ? 0.35 : 0
+    const target = Math.min(
+      1,
+      baseIntensity + streamingBoost + errorBoost + messageFlashRef.current * 0.45,
+    )
+
+    // Smooth toward target. Faster when ramping up (response feel),
+    // slower coming down (afterglow).
+    const ramping = target > uniforms.uIntensity.value
+    const speed = ramping ? 4.0 : 1.0
+    uniforms.uIntensity.value += (target - uniforms.uIntensity.value) * Math.min(1, dt * speed)
+
     if (coreRef.current) {
-      coreRef.current.rotation.y += dt * 0.12
-      coreRef.current.rotation.x += dt * 0.05
+      // Core spins faster while streaming - it visibly accelerates with effort.
+      const baseSpin = 0.12 + uniforms.uIntensity.value * 0.18
+      coreRef.current.rotation.y += dt * baseSpin
+      coreRef.current.rotation.x += dt * (0.05 + uniforms.uIntensity.value * 0.06)
     }
     if (latticeRef.current) {
-      latticeRef.current.rotation.y -= dt * 0.18
+      latticeRef.current.rotation.y -= dt * (0.18 + uniforms.uIntensity.value * 0.22)
       latticeRef.current.rotation.z += dt * 0.08
       const s = 1 + Math.sin(state.clock.elapsedTime * 0.6) * 0.02
       latticeRef.current.scale.setScalar(s)
@@ -93,7 +122,7 @@ export function ConductorPresence() {
     if (haloRef.current) {
       haloRef.current.rotation.z += dt * 0.04
       const m = haloRef.current.material as THREE.MeshBasicMaterial
-      m.opacity = 0.06 + uniforms.uIntensity.value * 0.12
+      m.opacity = 0.06 + uniforms.uIntensity.value * 0.18
     }
   })
 

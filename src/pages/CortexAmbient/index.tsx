@@ -24,6 +24,7 @@ import { ChatBeam } from './ChatBeam'
 import { ParticleField } from './ParticleField'
 import { SystemHUD } from './SystemHUD'
 import { ChatInputPanel } from './ChatInputPanel'
+import { ChatLog } from './ChatLog'
 import { useStatusBoard } from './useStatusBoard'
 import { useAmbientAudio } from './useAmbientAudio'
 import { AMBIENT_PALETTE } from './palette'
@@ -47,7 +48,7 @@ interface AmbientSceneProps {
   audioEnabled: boolean
 }
 
-/** Module-singleton Vector2 — postprocessing v2's ChromaticAberration expects a
+/** Module-singleton Vector2 - postprocessing v2's ChromaticAberration expects a
  *  real THREE.Vector2 instance, not a tuple. Recreating it per render would
  *  thrash the effect's uniform allocation. */
 const CHROMATIC_OFFSET = new THREE.Vector2(0.0008, 0.0012)
@@ -142,7 +143,42 @@ export default function CortexAmbientPage() {
         showLegend={showLegend}
       />
 
+      {/* 2D readable chat overlay - the lead surface for actual reading.
+          Round-1 chat-as-3D-billboards stays as ambience via ChatBeam. */}
+      <ChatLog />
+
       <ChatInputPanel />
+
+      {/* Ambient keyframes shared by 2D HUD elements (input ribbon, stream
+          dot, send-button spinner, cursor, "new" pill). Kept page-local so
+          the ambient surface is self-contained and the keyframes do not
+          leak into the rest of the admin UI. */}
+      <style>{`
+        @keyframes ambient-pulse {
+          0%, 100% { opacity: 0.45; transform: scale(0.85); }
+          50%      { opacity: 1.00; transform: scale(1.15); }
+        }
+        @keyframes ambient-cursor {
+          0%, 49% { opacity: 1; }
+          50%, 100% { opacity: 0; }
+        }
+        @keyframes ambient-spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes ambient-ribbon {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(250%); }
+        }
+        .ambient-chatlog-scroll::-webkit-scrollbar { width: 6px; }
+        .ambient-chatlog-scroll::-webkit-scrollbar-track { background: transparent; }
+        .ambient-chatlog-scroll::-webkit-scrollbar-thumb {
+          background: rgba(255,178,122,0.25);
+          border-radius: 3px;
+        }
+        .ambient-chatlog-scroll::-webkit-scrollbar-thumb:hover {
+          background: rgba(255,178,122,0.45);
+        }
+      `}</style>
     </div>
   )
 }
