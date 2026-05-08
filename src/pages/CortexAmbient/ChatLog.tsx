@@ -1,6 +1,22 @@
 /**
  * ChatLog - the 2D readable chat overlay above the input panel.
  *
+ * Round-3 bugfix, 2026-05-08, fork_mowu9a3g_f34229:
+ *   - Markdown rendering: messages were being rendered as plain pre-wrapped
+ *     text. Now wrapped in ReactMarkdown (remarkGfm + rehypeRaw) so headings,
+ *     lists, code blocks, links, bold all render. Mirrors the canonical
+ *     setup in src/pages/Cortex/blocks/TextBlock.tsx and CCStream.tsx.
+ *   - Doctrine-noise + model-XML scaffold tags stripped before render via
+ *     stripDoctrineNoise (handles <now>, <doctrine_surface>, <forks_rollup>,
+ *     <recent_doctrine>, <relevant_memory>, <restart_recovery>,
+ *     <recent_exchanges>, <last_turn_breadcrumb>, <perception_summary>,
+ *     <skills_surface> AND [APPLIED]/[NOT-APPLIED]/[BRIEF-CHECK WARN]/etc
+ *     tag-prefix lines) plus a local STRIP_TAGS regex for model scaffold
+ *     tags (analysis, thinking, scratchpad, reasoning, reflection, summary,
+ *     aside, plan, inner_monologue) per
+ *     ~/ecodiaos/patterns/frontend-strip-model-xml-tags.md and
+ *     ~/ecodiaos/patterns/system-injection-blocks-must-not-render-in-director-chat.md
+ *
  * Round-2 polish, 2026-05-08, fork_mowe5tuh_f2ddd3.
  *
  * Round 1 rendered messages exclusively as 3D-Billboard text drifting up
@@ -24,9 +40,28 @@
  *   - No emoji, no tagline, no wordmark. Typography carries the brand.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import { useOSSessionStore } from '@/store/osSessionStore'
+import { stripDoctrineNoise } from '@/utils/stripDoctrineNoise'
 
 const MAX_RENDERED = 30 // hard cap on what we render in this panel
+
+// Model XML scaffold tags that occasionally leak into rendered text. Per
+// ~/ecodiaos/patterns/frontend-strip-model-xml-tags.md - strip the tags but
+// keep the inner content (the model's reasoning is sometimes load-bearing,
+// just shouldn't show up as `<analysis>foo</analysis>` literal text).
+const STRIP_TAGS = ['analysis', 'thinking', 'scratchpad', 'reasoning', 'reflection', 'summary', 'aside', 'plan', 'inner_monologue']
+const STRIP_TAGS_RE = new RegExp(`</?(?:${STRIP_TAGS.join('|')})\\b[^>]*>`, 'gi')
+
+function cleanForRender(raw: string): string {
+  if (!raw) return ''
+  // 1. system-injection blocks + tag-prefix lines (multi-line aware, fence-safe).
+  const a = stripDoctrineNoise(raw)
+  // 2. model-XML scaffold tags - strip only the tag pair, keep inner text.
+  return a.replace(STRIP_TAGS_RE, '')
+}
 
 export function ChatLog() {
   const messages = useOSSessionStore((s) => s.messages)
@@ -141,6 +176,10 @@ interface BubbleProps {
 
 function Bubble({ role, content, streaming = false }: BubbleProps) {
   const isUser = role === 'user'
+  const cleaned = useMemo(() => cleanForRender(content), [content])
+
+  // User messages stay as plain text (mono, preserves whitespace) so pasted
+  // logs / commands render verbatim. Assistant messages render markdown.
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
@@ -152,18 +191,43 @@ function Bubble({ role, content, streaming = false }: BubbleProps) {
         </span>
         {streaming && <StreamDot />}
       </div>
-      <div
-        className="text-[13.5px] leading-[1.55] whitespace-pre-wrap break-words"
-        style={{
-          color: isUser ? 'rgba(232,236,242,0.92)' : 'rgba(255,255,255,0.97)',
-          fontFamily: isUser
-            ? "'JetBrains Mono', ui-monospace, monospace"
-            : "'Inter', system-ui, sans-serif",
-        }}
-      >
-        {content || (streaming ? <Cursor /> : '')}
-        {streaming && content ? <Cursor /> : null}
-      </div>
+      {isUser ? (
+        <div
+          className="text-[13.5px] leading-[1.55] whitespace-pre-wrap break-words"
+          style={{
+            color: 'rgba(232,236,242,0.92)',
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+          }}
+        >
+          {cleaned}
+          {streaming && <Cursor />}
+        </div>
+      ) : (
+        <div
+          className="ambient-md text-[13.5px] leading-[1.6] break-words"
+          style={{
+            color: 'rgba(255,255,255,0.97)',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+          }}
+        >
+          {cleaned ? (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeRaw]}
+              urlTransform={(url) => url}
+            >
+              {cleaned}
+            </ReactMarkdown>
+          ) : streaming ? (
+            <Cursor />
+          ) : null}
+          {streaming && cleaned ? <Cursor /> : null}
+        </div>
+      )}
     </div>
   )
 }

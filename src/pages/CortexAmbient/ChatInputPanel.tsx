@@ -1,19 +1,33 @@
 /**
  * ChatInputPanel - the focused input panel for typing to the OS.
  *
+ * Round-3 bugfix, 2026-05-08, fork_mowu9a3g_f34229:
+ *   - Bug 1 (400 "message is required"): the previous round was hand-rolling
+ *     `api.post('/os-session/message', { content, priority })`, but the
+ *     backend route at src/routes/osSession.js line 30 reads `req.body.message`
+ *     and 400s when missing. Switched to the canonical `sendOSMessage()` from
+ *     `@/api/osSession` which posts `{ message, mode }` and matches the shape
+ *     CCStream uses. Also calls `addUserMessage(text)` first so the user
+ *     bubble lands in the chat log immediately (matches CCStream pattern at
+ *     line 2182). Without that the message disappeared from the input but
+ *     never showed up as a user bubble.
+ *   - Bug 3 (textarea doesn't auto-grow): the height was pinned by `rows={1}`
+ *     and never re-measured. Added a useLayoutEffect that resets height to
+ *     auto then to scrollHeight on every value change, capped at 30vh so
+ *     long messages scroll inside the textarea instead of pushing the
+ *     surrounding chat off-screen.
+ *
  * Round-2 polish, 2026-05-08, fork_mowe5tuh_f2ddd3:
  *   - Real submit button (arrow-in-disc) instead of a tiny "send" text link.
  *   - Live "thinking" hairline under the input while OS is streaming.
  *   - Cmd+K affordance is always visible until first focus, then collapses.
  *   - Enter-glyph shown next to send button so the keyboard convention is
  *     readable at a glance.
- *   - On submit, the message text disappears immediately as before; on error
- *     the text restores; on success we never re-show it (the assistant has it).
  *
  * Bottom-anchored, narrow, glassy. Posts to /api/os-session/message.
  */
-import React, { useState, useEffect, useRef } from 'react'
-import api from '@/api/client'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { sendOSMessage } from '@/api/osSession'
 import { useOSSessionStore } from '@/store/osSessionStore'
 
 const PLACEHOLDERS = [
@@ -32,6 +46,7 @@ export function ChatInputPanel() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const isStreaming = useOSSessionStore((s) => s.status === 'streaming')
+  const addUserMessage = useOSSessionStore((s) => s.addUserMessage)
 
   // Slow placeholder rotation for life
   useEffect(() => {
@@ -53,18 +68,36 @@ export function ChatInputPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Auto-grow the textarea to fit content. useLayoutEffect (not useEffect) so
+  // the resize lands in the same paint as the keystroke - prevents one-frame
+  // flash where the textarea is at the old height before growing.
+  // Capped at 30vh; beyond that the textarea scrolls internally.
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const max = Math.round(window.innerHeight * 0.30)
+    const next = Math.min(el.scrollHeight, max)
+    el.style.height = next + 'px'
+    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
+  }, [value])
+
   const onSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (!value.trim() || sending) return
     setSending(true)
     const text = value
     setValue('')
+    // Optimistic: surface the user bubble immediately. addUserMessage also
+    // flips status to 'streaming' so the StreamingRibbon and "thinking…"
+    // pulse fire even before the WS opens its first text_delta.
+    addUserMessage(text)
     try {
-      // api client baseURL is already '/api'; do NOT double-prefix or every send 404s
-      // (text would clear, request fail, then catch path restores it -> "disappear and reappear" bug).
-      await api.post('/os-session/message', { content: text, priority: false })
+      // Canonical send action - POSTs { message, mode } which matches the
+      // backend's req.body.message check at routes/osSession.js:30.
+      await sendOSMessage(text, 'direct')
     } catch (err) {
-      // restore on error
+      // restore on transport failure
       setValue(text)
     } finally {
       setSending(false)
@@ -114,7 +147,7 @@ export function ChatInputPanel() {
               placeholder={PLACEHOLDERS[placeholderIdx]}
               rows={1}
               className="flex-1 resize-none bg-transparent text-[14px] text-white placeholder:text-white/30 focus:outline-none"
-              style={{ minHeight: '24px', maxHeight: '200px' }}
+              style={{ minHeight: '24px', maxHeight: '30vh', lineHeight: '1.45' }}
               disabled={sending}
             />
             <SubmitButton sending={sending} canSubmit={canSubmit} />

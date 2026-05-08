@@ -155,6 +155,84 @@ export default function CortexAmbientPage() {
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb:hover {
           background: rgba(255,178,122,0.45);
         }
+        /* Markdown rendering inside assistant bubbles. Tight, readable,
+           ember-themed. Mirrors the cortex-prose surface used in the
+           Cortex route but tuned darker for the ambient page. */
+        .ambient-md p { margin: 0; }
+        .ambient-md p + p { margin-top: 0.55em; }
+        .ambient-md ul, .ambient-md ol { margin: 0.4em 0; padding-left: 1.2em; }
+        .ambient-md li { margin: 0.15em 0; }
+        .ambient-md li > p { margin: 0; }
+        .ambient-md ul { list-style: disc; }
+        .ambient-md ol { list-style: decimal; }
+        .ambient-md strong { color: #ffe7d2; font-weight: 600; }
+        .ambient-md em { color: rgba(255,255,255,0.78); font-style: italic; }
+        .ambient-md a {
+          color: #ffb27a;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+          text-decoration-color: rgba(255,178,122,0.45);
+        }
+        .ambient-md a:hover { text-decoration-color: #ffb27a; }
+        .ambient-md h1, .ambient-md h2, .ambient-md h3 {
+          color: #ffe7d2;
+          font-weight: 600;
+          line-height: 1.3;
+          margin: 0.9em 0 0.35em;
+        }
+        .ambient-md h1 { font-size: 1.05em; }
+        .ambient-md h2 { font-size: 1.0em; }
+        .ambient-md h3 { font-size: 0.95em; color: rgba(255,231,210,0.85); }
+        .ambient-md hr {
+          border: none;
+          height: 1px;
+          background: rgba(255,178,122,0.15);
+          margin: 1em 0;
+        }
+        .ambient-md blockquote {
+          border-left: 2px solid rgba(255,178,122,0.35);
+          padding-left: 0.8em;
+          color: rgba(255,255,255,0.72);
+          font-style: italic;
+          margin: 0.5em 0;
+        }
+        .ambient-md code {
+          font-family: 'JetBrains Mono', ui-monospace, monospace;
+          font-size: 0.86em;
+          background: rgba(255,178,122,0.10);
+          color: #ffd5b3;
+          padding: 1px 5px;
+          border-radius: 4px;
+          border: 1px solid rgba(255,178,122,0.12);
+        }
+        .ambient-md pre {
+          margin: 0.55em 0;
+          background: rgba(0,0,0,0.40);
+          border: 1px solid rgba(255,178,122,0.12);
+          border-radius: 6px;
+          padding: 10px 12px;
+          overflow-x: auto;
+        }
+        .ambient-md pre code {
+          background: transparent;
+          border: none;
+          padding: 0;
+          color: #e8dcc8;
+          font-size: 0.84em;
+          line-height: 1.55;
+        }
+        .ambient-md table {
+          border-collapse: collapse;
+          margin: 0.55em 0;
+          font-size: 0.92em;
+          width: 100%;
+        }
+        .ambient-md th, .ambient-md td {
+          border: 1px solid rgba(255,178,122,0.15);
+          padding: 5px 8px;
+          text-align: left;
+        }
+        .ambient-md th { background: rgba(255,178,122,0.08); color: #ffe7d2; }
       `}</style>
     </div>
   )
