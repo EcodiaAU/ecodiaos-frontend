@@ -1,158 +1,135 @@
 /**
- * CortexAmbient - Jarvis-class ambient OS scene.
+ * CortexAmbient - "the workshop".
  *
- * SPIKE BUILD - 2026-05-08, fork_mow98jz7_9e1941.
+ * Round-3 redispatch (fork_mowtxg3d_302865). Replaces the round-1/2 R3F
+ * orb-and-particles scene with the workshop layout from the validated spec
+ * at ~/ecodiaos/drafts/cortex-ambient-design-spec-2026-05-08.md.
  *
- * The classic /cortex page (CommandDeck + tabs + ForksPanel) remains untouched
- * at /cortex. This is an additive parallel surface at /cortex-ambient and
- * also reachable via /cortex?ambient=1 query flag.
+ * Structure (single vertical scroll, same desktop and mobile):
  *
- * Vision: forks as orbital living bodies, status_board as constellation,
- * chat as focal beam, perception as ambient particles, scene breathes at idle.
+ *   HORIZON              breathing oscilloscope (sticky-top)
+ *   IDENTITY-BAR         EcodiaOS / clock / audio toggle (sticky-under-horizon)
+ *   CHAT                 the lead readable surface (own scroll)
+ *   INPUT                sticky-bottom of chat
+ *   HANDS / FORKS        list of running fork cards
+ *   WORKING MEMORY       status_board priority rows
+ *   FOOTER               DAO marks
+ *
+ * No three.js. No <Canvas>. No particle field. The horizon is the only
+ * continuous-motion element on the page and it's bounded to a 60px band.
+ *
+ * Spec sections referenced inline. Worker C/D/E follow this scaffold for
+ * live-data wiring, motion polish, and visual verify.
  */
-import { Suspense, useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
-import { Stars } from '@react-three/drei'
-import * as THREE from 'three'
 
-import { ConductorPresence } from './ConductorPresence'
-import { ForkOrbits } from './ForkOrbits'
-import { StatusConstellation } from './StatusConstellation'
-import { ChatBeam } from './ChatBeam'
-import { ParticleField } from './ParticleField'
-import { SystemHUD } from './SystemHUD'
-import { ChatInputPanel } from './ChatInputPanel'
 import { ChatLog } from './ChatLog'
+import { ChatInputPanel } from './ChatInputPanel'
+import { Horizon } from './Horizon'
+import { PresenceHeader } from './PresenceHeader'
+import { ForksStrip } from './ForksStrip'
+import { StatusThreads } from './StatusThreads'
+import { Footer } from './Footer'
 import { useStatusBoard } from './useStatusBoard'
-import { useAmbientAudio } from './useAmbientAudio'
+import { useForks } from './useForks'
 import { AMBIENT_PALETTE } from './palette'
 
-/**
- * Slow camera drift around the conductor presence, like a watcher
- * leaning in and out of the scene.
- */
-function CameraBreath() {
-  useFrame((state) => {
-    const t = state.clock.elapsedTime
-    state.camera.position.x = Math.sin(t * 0.06) * 1.6
-    state.camera.position.y = 1.2 + Math.sin(t * 0.04) * 0.4
-    state.camera.position.z = 9 + Math.cos(t * 0.05) * 0.6
-    state.camera.lookAt(0, 0, 0)
-  })
-  return null
+interface SectionProps {
+  label: string
+  children: React.ReactNode
+  /** mute the label visually when the body is empty / quiet */
+  dim?: boolean
 }
 
-interface AmbientSceneProps {
-  audioEnabled: boolean
-}
-
-/** Module-singleton Vector2 - postprocessing v2's ChromaticAberration expects a
- *  real THREE.Vector2 instance, not a tuple. Recreating it per render would
- *  thrash the effect's uniform allocation. */
-const CHROMATIC_OFFSET = new THREE.Vector2(0.0008, 0.0012)
-
-function AmbientScene({ audioEnabled }: AmbientSceneProps) {
-  const statusRows = useStatusBoard()
+function Section({ label, children, dim = false }: SectionProps) {
   return (
-    <>
-      <color attach="background" args={[AMBIENT_PALETTE.base]} />
-      <fog attach="fog" args={[AMBIENT_PALETTE.fog, 8, 28]} />
-      <CameraBreath />
-
-      {/* Ambient lighting - low key, depth-revealing */}
-      <ambientLight intensity={0.18} color={AMBIENT_PALETTE.ambient} />
-      <pointLight position={[0, 0, 0]} intensity={2.4} color={AMBIENT_PALETTE.coreGlow} distance={14} decay={2} />
-      <pointLight position={[6, 4, -2]} intensity={0.4} color={AMBIENT_PALETTE.violet} distance={18} decay={2} />
-      <pointLight position={[-7, -3, 1]} intensity={0.3} color={AMBIENT_PALETTE.amber} distance={18} decay={2} />
-
-      {/* Backdrop starfield - dim, slow */}
-      <Stars radius={80} depth={50} count={1600} factor={3} saturation={0} fade speed={0.4} />
-
-      {/* The presence at centre - what the OS IS */}
-      <ConductorPresence />
-
-      {/* Live forks as orbital bodies */}
-      <ForkOrbits />
-
-      {/* Status_board as constellation */}
-      <StatusConstellation />
-
-      {/* Chat stream as focal beam upward */}
-      <ChatBeam />
-
-      {/* Perception/ambient particles flowing through scene */}
-      <ParticleField count={140} />
-
-      {/* Post-processing: tasteful bloom + vignette + faint chromatic */}
-      <EffectComposer multisampling={0}>
-        <Bloom intensity={0.7} luminanceThreshold={0.18} luminanceSmoothing={0.42} mipmapBlur />
-        <Vignette eskil={false} offset={0.18} darkness={0.78} />
-        <ChromaticAberration offset={CHROMATIC_OFFSET} radialModulation modulationOffset={0.4} />
-      </EffectComposer>
-
-      {/* Hidden but mounted - audio engine wired off the conductor */}
-      <AudioBridge enabled={audioEnabled} statusCount={statusRows.length} />
-    </>
+    <section className="ambient-section" style={{ paddingTop: 20, paddingBottom: 4 }}>
+      <div
+        className="px-4"
+        style={{
+          maxWidth: 880,
+          margin: '0 auto',
+          color: AMBIENT_PALETTE.textDim,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          fontSize: 10,
+          letterSpacing: '0.22em',
+          textTransform: 'uppercase',
+          opacity: dim ? 0.5 : 0.85,
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ maxWidth: 880, margin: '0 auto' }}>{children}</div>
+    </section>
   )
-}
-
-function AudioBridge({ enabled, statusCount }: { enabled: boolean; statusCount: number }) {
-  useAmbientAudio(enabled, statusCount)
-  return null
 }
 
 export default function CortexAmbientPage() {
   const [audioEnabled, setAudioEnabled] = useState(false)
-  const [params, setParams] = useSearchParams()
-  const showLegend = params.get('legend') !== '0'
+  const [params] = useSearchParams()
+  // Reserved for future legend/density toggle. Read but unused for now.
+  void params
 
-  // Ctrl+. toggles audio (and could toggle scene mode in shared shell elsewhere)
+  const statusRows = useStatusBoard()
+  const { forks, runningCount } = useForks()
+
+  // Ctrl+. toggles audio-tray icon state (audio engine itself dropped this
+  // round per spec §J; the toggle remains so the visual affordance is still
+  // there for when audio comes back as a separate /listening-room route).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === '.') {
         setAudioEnabled((v) => !v)
       }
-      if (e.key === 'l' && (e.metaKey || e.altKey)) {
-        const next = new URLSearchParams(params)
-        if (next.get('legend') === '0') next.delete('legend')
-        else next.set('legend', '0')
-        setParams(next, { replace: true })
-      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [params, setParams])
+  }, [])
 
   return (
-    <div className="ambient-root fixed inset-0 overflow-hidden bg-[#06070a] text-white">
-      <Canvas
-        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-        dpr={[1, 1.75]}
-        camera={{ position: [0, 1.2, 9], fov: 52, near: 0.1, far: 200 }}
-      >
-        <Suspense fallback={null}>
-          <AmbientScene audioEnabled={audioEnabled} />
-        </Suspense>
-      </Canvas>
+    <div
+      className="ambient-root min-h-screen w-full"
+      style={{
+        background: AMBIENT_PALETTE.base,
+        color: AMBIENT_PALETTE.text,
+        // Single page-level vertical scroll. Sub-regions can scroll within.
+        overflowX: 'hidden',
+      }}
+    >
+      <Horizon runningForks={runningCount} />
 
-      <SystemHUD
+      <PresenceHeader
         audioEnabled={audioEnabled}
         onToggleAudio={() => setAudioEnabled((v) => !v)}
-        showLegend={showLegend}
+        forkCount={runningCount}
       />
 
-      {/* 2D readable chat overlay - the lead surface for actual reading.
-          Round-1 chat-as-3D-billboards stays as ambience via ChatBeam. */}
-      <ChatLog />
+      {/* CHAT — the lead surface. Own scroll, document feel. */}
+      <div className="ambient-chat-region" style={{ paddingTop: 18 }}>
+        <ChatLog />
+      </div>
 
+      {/* INPUT — sticky-bottom of the chat region. */}
       <ChatInputPanel />
 
-      {/* Ambient keyframes shared by 2D HUD elements (input ribbon, stream
-          dot, send-button spinner, cursor, "new" pill). Kept page-local so
-          the ambient surface is self-contained and the keyframes do not
-          leak into the rest of the admin UI. */}
+      {/* HANDS / FORKS — what the entity is doing right now. */}
+      <Section label={`hands · ${forks.length} fork${forks.length === 1 ? '' : 's'}`} dim={forks.length === 0}>
+        <ForksStrip forks={forks} layout="horizontal" />
+      </Section>
+
+      {/* WORKING MEMORY / STATUS_BOARD — what's on the entity's mind. */}
+      <Section label={`working memory · ${statusRows.length} thread${statusRows.length === 1 ? '' : 's'}`} dim={statusRows.length === 0}>
+        <StatusThreads rows={statusRows} />
+      </Section>
+
+      <Footer />
+
+      {/* Page-local keyframes shared by chat input ribbon, stream dot,
+          send-button spinner, cursor and "new" pill. Kept inline so the
+          ambient surface is self-contained and these don't leak into the
+          rest of the admin UI. */}
       <style>{`
         @keyframes ambient-pulse {
           0%, 100% { opacity: 0.45; transform: scale(0.85); }

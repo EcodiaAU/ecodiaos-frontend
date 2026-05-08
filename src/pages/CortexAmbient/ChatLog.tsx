@@ -80,31 +80,19 @@ export function ChatLog() {
   if (recent.length === 0 && !isStreaming && !isError) return null
 
   return (
-    <div className="ambient-chatlog pointer-events-none absolute inset-x-0 z-10 px-4"
-      style={{ bottom: '120px' }}>
-      <div className="mx-auto max-w-3xl pointer-events-auto relative">
-        {/* Top scrim - fades scene into the chat panel */}
-        <div className="pointer-events-none absolute inset-x-0 -top-10 h-10"
-          style={{
-            background: 'linear-gradient(180deg, rgba(6,7,10,0) 0%, rgba(6,7,10,0.78) 100%)',
-          }}
-        />
-
-        {/* Scroll surface */}
+    <div className="ambient-chatlog relative w-full px-4">
+      <div className="mx-auto max-w-3xl relative">
+        {/* Scroll surface — flows in document layout, not fixed-overlay */}
         <div
           ref={scrollRef}
           className="ambient-chatlog-scroll"
           style={{
-            maxHeight: 'min(48vh, 520px)',
+            minHeight: 'min(48vh, 360px)',
+            maxHeight: 'min(60vh, 600px)',
             overflowY: 'auto',
-            background: 'linear-gradient(180deg, rgba(8,10,14,0.62) 0%, rgba(6,7,10,0.86) 100%)',
-            borderTopLeftRadius: 6,
-            borderTopRightRadius: 6,
-            borderTop: '1px solid rgba(255,178,122,0.12)',
-            borderLeft: '1px solid rgba(255,178,122,0.08)',
-            borderRight: '1px solid rgba(255,178,122,0.08)',
-            backdropFilter: 'blur(14px) saturate(1.15)',
-            WebkitBackdropFilter: 'blur(14px) saturate(1.15)',
+            background: 'linear-gradient(180deg, rgba(8,10,14,0.55) 0%, rgba(6,7,10,0.78) 100%)',
+            borderRadius: 6,
+            border: '1px solid rgba(255,178,122,0.10)',
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(255,178,122,0.25) transparent',
           }}

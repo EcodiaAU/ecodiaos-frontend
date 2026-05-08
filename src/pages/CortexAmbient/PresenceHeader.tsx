@@ -1,0 +1,205 @@
+/**
+ * PresenceHeader — typographic identity + breath of the entity.
+ *
+ * Round-3, fork_mowtlsvo_95bffd (manager fork_mowtf5s4_82c7f4).
+ *
+ * Sticky-top wordmark + breath line + alive/thinking/quiet label + AEST
+ * clock + tiny audio toggle. Pure CSS keyframes. No 3D, no R3F.
+ *
+ * Spec §4.1.
+ */
+import { useEffect, useState } from 'react'
+import { AMBIENT_PALETTE } from './palette'
+
+interface PresenceHeaderProps {
+  audioEnabled: boolean
+  onToggleAudio: () => void
+  forkCount: number
+}
+
+function presenceLabel(forkCount: number): string {
+  if (forkCount <= 0) return 'quiet'
+  if (forkCount === 1) return 'alive'
+  return 'thinking'
+}
+
+/** Keyed to fork count: 1 fork = lazy 5s, 5+ forks = brisk 2s. */
+function breathPeriodSeconds(forkCount: number): number {
+  if (forkCount <= 0) return 5
+  if (forkCount >= 5) return 2
+  // 1->4.4s, 2->3.8s, 3->3.2s, 4->2.6s
+  return 5 - 0.6 * forkCount
+}
+
+function formatAEST(now: Date): string {
+  // 24h HH:mm in Australia/Brisbane (AEST, no DST). Pad to 2 digits.
+  try {
+    return new Intl.DateTimeFormat('en-AU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Australia/Brisbane',
+    }).format(now)
+  } catch {
+    const h = now.getUTCHours() + 10
+    const hh = ((h % 24) + 24) % 24
+    return `${String(hh).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`
+  }
+}
+
+export function PresenceHeader({ audioEnabled, onToggleAudio, forkCount }: PresenceHeaderProps) {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 15000)
+    return () => window.clearInterval(t)
+  }, [])
+
+  const label = presenceLabel(forkCount)
+  const period = breathPeriodSeconds(forkCount)
+  const clock = formatAEST(now)
+
+  return (
+    <header
+      className="ambient-presence-header sticky top-0 z-40"
+      style={{
+        background: 'rgba(6,7,10,0.92)',
+        borderBottom: '1px solid rgba(255,178,122,0.12)',
+        backdropFilter: 'blur(12px) saturate(1.1)',
+        WebkitBackdropFilter: 'blur(12px) saturate(1.1)',
+      }}
+    >
+      <div
+        className="mx-auto flex items-center justify-between gap-4 px-4 py-3 lg:py-4"
+        style={{ maxWidth: 1280 }}
+      >
+        {/* Left: wordmark + breath line */}
+        <div className="flex flex-col">
+          <div
+            className="text-[22px] lg:text-[24px] font-semibold leading-none"
+            style={{
+              color: AMBIENT_PALETTE.coreGlow,
+              letterSpacing: '-0.01em',
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}
+          >
+            EcodiaOS
+          </div>
+          <div
+            aria-hidden
+            className="ambient-breath-line mt-1.5"
+            style={{
+              width: 80,
+              height: 1,
+              background: AMBIENT_PALETTE.coreGlow,
+              opacity: 0.6,
+              animationDuration: `${period}s`,
+            }}
+          />
+        </div>
+
+        {/* Center-right: status label */}
+        <div
+          className="flex-1 text-center text-[13px] lg:text-[14px]"
+          style={{
+            color: AMBIENT_PALETTE.textDim,
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            letterSpacing: '0.04em',
+          }}
+        >
+          <span style={{ color: AMBIENT_PALETTE.textDim }}>· </span>
+          <span
+            style={{
+              color:
+                label === 'thinking'
+                  ? AMBIENT_PALETTE.coreGlow
+                  : label === 'alive'
+                    ? AMBIENT_PALETTE.emberSoft
+                    : AMBIENT_PALETTE.textDim,
+            }}
+          >
+            {label}
+          </span>
+          {forkCount > 0 ? (
+            <span style={{ color: AMBIENT_PALETTE.textDim }}> · {forkCount}</span>
+          ) : null}
+        </div>
+
+        {/* Right: clock + audio toggle */}
+        <div className="flex items-center gap-3">
+          <span
+            className="text-[13px] tabular-nums"
+            style={{
+              color: AMBIENT_PALETTE.textDim,
+              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+              letterSpacing: '0.05em',
+            }}
+            aria-label={`time ${clock} AEST`}
+          >
+            {clock} <span className="opacity-70">AEST</span>
+          </span>
+          <button
+            type="button"
+            onClick={onToggleAudio}
+            aria-label={audioEnabled ? 'mute ambient audio' : 'enable ambient audio'}
+            aria-pressed={audioEnabled}
+            className="flex items-center justify-center rounded-full"
+            style={{
+              width: 44,
+              height: 44,
+              border: audioEnabled
+                ? '1px solid rgba(255,178,122,0.55)'
+                : '1px solid rgba(255,255,255,0.12)',
+              background: audioEnabled
+                ? 'radial-gradient(circle at 50% 40%, rgba(255,178,122,0.32) 0%, rgba(255,178,122,0.04) 70%)'
+                : 'transparent',
+              color: audioEnabled ? AMBIENT_PALETTE.coreGlow : 'rgba(255,255,255,0.45)',
+              transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+              cursor: 'pointer',
+            }}
+          >
+            {audioEnabled ? <SpeakerOnGlyph /> : <SpeakerOffGlyph />}
+          </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes ambient-breath {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 1; }
+        }
+        .ambient-breath-line {
+          animation-name: ambient-breath;
+          animation-timing-function: ease-in-out;
+          animation-iteration-count: infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ambient-breath-line {
+            animation: none !important;
+            opacity: 0.6 !important;
+          }
+        }
+      `}</style>
+    </header>
+  )
+}
+
+function SpeakerOnGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3.5 6 H6 L9.5 3 V13 L6 10 H3.5 Z" />
+      <path d="M11.5 6 Q13 8 11.5 10" />
+    </svg>
+  )
+}
+
+function SpeakerOffGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3.5 6 H6 L9.5 3 V13 L6 10 H3.5 Z" />
+      <path d="M11.5 6 L13.5 8 M13.5 6 L11.5 8" />
+    </svg>
+  )
+}

@@ -74,7 +74,17 @@ export function ChatInputPanel() {
   const canSubmit = !sending && value.trim().length > 0
 
   return (
-    <form onSubmit={onSubmit} className="ambient-input pointer-events-auto absolute inset-x-0 bottom-0 z-20 px-4 pb-4 pt-2">
+    <form
+      onSubmit={onSubmit}
+      className="ambient-input w-full px-4 pb-4 pt-2 lg:static"
+      style={{
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 20,
+        background:
+          'linear-gradient(180deg, rgba(6,7,10,0) 0%, rgba(6,7,10,0.86) 30%, rgba(6,7,10,0.96) 100%)',
+      }}
+    >
       <div className="mx-auto max-w-3xl">
         <div className="relative rounded-md overflow-hidden"
           style={{
