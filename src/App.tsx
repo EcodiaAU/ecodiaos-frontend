@@ -11,6 +11,7 @@ const CortexPage = lazy(() => import('./pages/Cortex'))
 const CortexAmbientPage = lazy(() => import('./pages/CortexAmbient'))
 const RescuePage = lazy(() => import('./pages/Rescue'))
 const LoginPage = lazy(() => import('./pages/Login'))
+const VoicePage = lazy(() => import('./pages/Voice'))
 
 /** Ambient loading state — a soft breathing glow, not a spinner */
 function SceneSuspense({ children }: { children: React.ReactNode }) {
@@ -55,6 +56,10 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<SceneSuspense><LoginPage /></SceneSuspense>} />
+        {/* /voice — public mobile mic streamer (no auth gate; backend
+            decides whether to accept anonymous chunks). Lives outside the
+            AppShell so it renders full-bleed on mobile. */}
+        <Route path="/voice" element={<SceneSuspense><VoicePage /></SceneSuspense>} />
         <Route
           element={
             <ProtectedRoute>
