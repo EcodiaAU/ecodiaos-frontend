@@ -159,6 +159,17 @@ interface OSSessionStore {
     error?: string
   } | null
 
+  /** Resilience: timestamp + reason from last os-session:status:error event.
+   *  Cleared when status returns to 'idle' / on next user message / on
+   *  successful extended-recovery. Drives the "Stream errored - tap to
+   *  recover" pill. Origin: 7 May 2026 DeepSeek 400 storm phone-freeze. */
+  lastErrorAt: string | null
+  lastErrorReason: string | null
+  /** Resilience: count of messages injected by the most recent extended-
+   *  recovery call. Drives the "N new messages" pill. Cleared on tap or
+   *  after auto-dismiss. */
+  recoveredMessageCount: number
+
   // Actions
   setStatus: (status: OSSessionStore['status']) => void
   setLiveness: (signal: LivenessSignal | null) => void
@@ -193,6 +204,18 @@ interface OSSessionStore {
   setLastSeq: (seq: number | null) => void
   setLastTurnTelemetry: (t: TurnTelemetry | null) => void
   setCompactingInPlace: (v: boolean) => void
+  /** Resilience: capture an os-session:status:error event with optional reason. */
+  setError: (reason: string | null) => void
+  /** Resilience: clear the error state (also resets status to 'idle' if currently 'error'). */
+  clearError: () => void
+  /** Resilience: dedup-merge messages from /os-session/messages?since= into
+   *  the chat timeline. Skips any (role, content, ~created_at) already present
+   *  among the latest 200 messages. Returns the count of messages newly added. */
+  injectRecoveredMessages: (
+    msgs: Array<{ role: 'user' | 'assistant'; content: string; created_at: string }>,
+  ) => number
+  /** Resilience: clear the "N new messages" pill counter. */
+  clearRecoveredCount: () => void
   /** Render a delivered queued message as a user card without disrupting any
    *  in-flight stream state (status, streamText, buffers). Used when the
    *  backend auto-delivers queue messages — we want them visible in the chat
@@ -298,6 +321,9 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   recoveryAttempted: false,
   interruptQueue: [],
   handover: null,
+  lastErrorAt: null,
+  lastErrorReason: null,
+  recoveredMessageCount: 0,
 
   setStatus: (status) => set({ status }),
   setLiveness: (signal) => set({ liveness: signal }),
@@ -577,6 +603,63 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   setLastTurnTelemetry: (t) => set({ lastTurnTelemetry: t }),
 
   setCompactingInPlace: (v) => set({ compactingInPlace: v }),
+
+  setError: (reason) => set({
+    lastErrorAt: new Date().toISOString(),
+    lastErrorReason: reason,
+  }),
+  clearError: () => set(state => ({
+    lastErrorAt: null,
+    lastErrorReason: null,
+    status: state.status === 'error' ? 'idle' : state.status,
+  })),
+  injectRecoveredMessages: (msgs) => {
+    if (!msgs || msgs.length === 0) return 0
+    const state = get()
+    // Dedup window: last 200 existing messages, match by (role, trimmed content,
+    // created_at within 2s). Server log times can drift slightly from the live
+    // event timestamp the FE captured.
+    const existing = state.messages.slice(-200)
+    const seenKeys = new Set<string>()
+    for (const m of existing) {
+      const ts = m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()
+      // Bucket by 2s windows so log-time vs live-time drift collapses to the
+      // same bucket. Drop the last 3 digits of millis (ie /1000) to round to seconds.
+      const bucket = Math.floor(ts / 2000)
+      seenKeys.add(`${m.role}|${(m.content || '').trim()}|${bucket}`)
+      // Also tolerate +/- 1 bucket for cross-second message timing.
+      seenKeys.add(`${m.role}|${(m.content || '').trim()}|${bucket - 1}`)
+      seenKeys.add(`${m.role}|${(m.content || '').trim()}|${bucket + 1}`)
+    }
+    const additions: OSSessionMessage[] = []
+    for (const r of msgs) {
+      const ts = new Date(r.created_at).getTime()
+      const bucket = Math.floor(ts / 2000)
+      const key = `${r.role}|${(r.content || '').trim()}|${bucket}`
+      if (seenKeys.has(key)) continue
+      seenKeys.add(key)
+      additions.push({
+        id: crypto.randomUUID(),
+        role: r.role,
+        content: r.content,
+        timestamp: new Date(r.created_at),
+      })
+    }
+    if (additions.length === 0) return 0
+    // Splice additions into the message timeline ordered by timestamp.
+    set(s => ({
+      messages: trimMessages(
+        [...s.messages, ...additions].sort((a, b) => {
+          const ta = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime()
+          const tb = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime()
+          return ta - tb
+        })
+      ),
+      recoveredMessageCount: s.recoveredMessageCount + additions.length,
+    }))
+    return additions.length
+  },
+  clearRecoveredCount: () => set({ recoveredMessageCount: 0 }),
 
   addDeliveredQueueMessage: (content) => {
     if (!content) return

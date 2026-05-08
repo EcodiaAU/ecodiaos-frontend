@@ -127,6 +127,31 @@ export async function recoverEventsSince(sinceSeq: number) {
   }
 }
 
+/** Extended-recovery via the durable cc_session_logs transcript.
+ *
+ *  When the in-memory ring buffer can't cover a long disconnect (>500 events
+ *  aged out, or PM2 restarted the session epoch and the ring is empty),
+ *  this fetches the role-tagged transcript since `sinceIsoTs`. Use as a
+ *  fallback after `recoverEventsSince()` returns count=0 or as the
+ *  primary recover path on stream-error / extended-stale-stream.
+ *
+ *  Tool calls and thinking blocks are NOT here - those live only in the
+ *  live event ring. This endpoint surfaces what would be rendered as chat
+ *  messages, not the full SDK event stream.
+ *
+ *  Default lookback: 24h server-side. Max 1000 messages. */
+export async function getMessagesSince(sinceIsoTs?: string, limit = 200) {
+  const params: Record<string, string | number> = { limit }
+  if (sinceIsoTs) params.since = sinceIsoTs
+  const { data } = await api.get('/os-session/messages', { params })
+  return data as {
+    messages: Array<{ role: 'user' | 'assistant'; content: string; created_at: string }>
+    session_id: string | null
+    count: number
+    since: string | null
+  }
+}
+
 /** Abort the active OS session query immediately */
 export async function abortOS() {
   const { data } = await api.post('/os-session/abort')

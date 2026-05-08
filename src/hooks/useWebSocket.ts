@@ -8,7 +8,7 @@ import { useOSSessionStore, getEffectiveStreamTextLength, flushStreamBuffersSync
 import { useConnectionStore, type ConnectionState } from '@/store/connectionStore'
 import type { CCSession } from '@/types/claudeCode'
 import api from '@/api/client'
-import { recoverEventsSince } from '@/api/osSession'
+import { recoverEventsSince, getMessagesSince } from '@/api/osSession'
 
 /**
  * Connection state — drives the ambient offline indicator and the
@@ -369,6 +369,140 @@ function replayRecoveredEvents(events: Array<{ seq: number; type: string; data?:
   }
 }
 
+// ─── Resilience: stale-stream watchdog + extended-recovery via /messages ─
+//
+// The 7 May 2026 DeepSeek 400-storm phone-freeze established that the
+// existing seq + ring + reconnect stack is necessary but not sufficient:
+//   1. The 500-event ring cannot cover an extended (multi-hour) gap.
+//   2. status='error' silently locked the UI - no retry affordance, no
+//      finalisation of partial streamText, no message visible in the chat.
+//   3. WS staying CONNECTED while no events flow is invisible to the
+//      reconnect machinery (no close fires).
+//
+// Fix strategy:
+//   - extended-recovery via GET /api/os-session/messages?since= reading the
+//     durable cc_session_logs transcript (commit d668ca5 backend half).
+//   - stale-stream watchdog: while status='streaming', if no event arrives
+//     for >30s AND no liveness heartbeat in last 15s, classify as stale,
+//     trigger ring-buffer recovery + extended recovery.
+//   - error-status handler enhancement: finalise streamText into a message,
+//     surface the reason via osStore.setError, leave the retry pill to
+//     the UI commit.
+//
+// Doctrine: ~/ecodiaos/patterns/listener-pipeline-needs-five-layer-verification.md
+
+let _lastEventAt = 0
+let _lastLivenessAt = 0
+let _staleWatchdogTimer: ReturnType<typeof setInterval> | null = null
+let _extendedRecoverInFlight = false
+
+const STALE_NO_EVENT_MS = 30_000
+const STALE_NO_LIVENESS_MS = 15_000
+const WATCHDOG_TICK_MS = 5_000
+
+function _markEventReceived(isLiveness = false) {
+  _lastEventAt = Date.now()
+  if (isLiveness) _lastLivenessAt = Date.now()
+}
+
+/** Extended-recovery via cc_session_logs. Use as a fallback after
+ *  recoverEventsSince() returns count=0 OR proactively when a stale stream
+ *  is detected. Returns the number of NEW (deduped) messages injected. */
+async function _runExtendedRecovery(reason: string): Promise<number> {
+  if (_extendedRecoverInFlight) return 0
+  _extendedRecoverInFlight = true
+  try {
+    const osStore = useOSSessionStore.getState()
+    // Pick the most recent timestamp we know about - prefer last user
+    // message (which the FE owns) over the last assistant message (which
+    // may have been clipped by the freeze itself). Fall back to 24h if
+    // neither exists.
+    const lastUser = osStore.lastUserMessageAt
+    const messages = osStore.messages
+    let since: string | null = lastUser
+    if (!since && messages.length > 0) {
+      const tail = messages[messages.length - 1]
+      const ts = tail.timestamp instanceof Date ? tail.timestamp : new Date(tail.timestamp)
+      since = ts.toISOString()
+    }
+    const result = await getMessagesSince(since || undefined)
+    const added = osStore.injectRecoveredMessages(result.messages)
+    if (typeof window !== 'undefined' && window.console) {
+      window.console.info('[useWebSocket] extended-recovery', {
+        reason,
+        since,
+        fetched: result.count,
+        added,
+      })
+    }
+    return added
+  } catch (err) {
+    if (typeof window !== 'undefined' && window.console) {
+      window.console.warn('[useWebSocket] extended-recovery failed', err)
+    }
+    return 0
+  } finally {
+    _extendedRecoverInFlight = false
+  }
+}
+
+/** Stale-stream watchdog. Started on first WS message, runs forever (cheap).
+ *  Fires when status='streaming' AND no events for STALE_NO_EVENT_MS AND
+ *  no liveness heartbeat for STALE_NO_LIVENESS_MS. */
+function _startStaleWatchdog() {
+  if (_staleWatchdogTimer) return
+  _staleWatchdogTimer = setInterval(() => {
+    const osStore = useOSSessionStore.getState()
+    if (osStore.status !== 'streaming') return
+    const now = Date.now()
+    if (_lastEventAt === 0) return
+    const eventGap = now - _lastEventAt
+    const livenessGap = now - _lastLivenessAt
+    if (eventGap < STALE_NO_EVENT_MS) return
+    if (livenessGap < STALE_NO_LIVENESS_MS) return
+    // Stale. Don't re-fire during in-flight recovery.
+    if (_extendedRecoverInFlight || _recoverInFlight) return
+    if (typeof window !== 'undefined' && window.console) {
+      window.console.warn('[useWebSocket] stale stream detected', {
+        eventGapMs: eventGap,
+        livenessGapMs: livenessGap,
+      })
+    }
+    setConnectionState('reconnecting')
+    // Bump the last-event clock by half the threshold so we don't re-fire
+    // every tick before recovery completes.
+    _lastEventAt = now - STALE_NO_EVENT_MS / 2
+    const since = osStore.lastSeenSeq
+    if (since != null) _scheduleRecover(since)
+    _runExtendedRecovery('stale_stream_watchdog').then(added => {
+      // After a stale-detection recovery, if nothing new arrived, force
+      // status off 'streaming' so the UI doesn't sit on a phantom spinner.
+      const s = useOSSessionStore.getState()
+      if (s.status === 'streaming' && added === 0) {
+        // The backend is genuinely silent. Surface the situation to the
+        // UI as an error so the retry pill renders.
+        s.setStatus('error')
+        s.setError('stream_silent')
+      }
+      setConnectionState('connected')
+    })
+  }, WATCHDOG_TICK_MS)
+}
+
+/** Handle an os-session:status:error event: finalise any partial stream
+ *  buffer into a message (don't lose it), record the reason for the UI. */
+function _handleErrorStatus(reason: string | null) {
+  const osStore = useOSSessionStore.getState()
+  // Finalise any in-flight stream buffer so the partial response isn't lost.
+  if (osStore.streamText || osStore.streamTools.length > 0 || osStore.streamThinking) {
+    osStore.finalizeResponse()
+  }
+  osStore.setStatus('error')
+  osStore.setError(reason || 'unknown')
+}
+
+export { _runExtendedRecovery, _handleErrorStatus, _startStaleWatchdog }
+
 // ─── Seq-epoch + debounced recovery (module-level state) ─────────────────
 // Tracks the current server epoch so we can detect restarts without false
 // gap-fill attempts. Debouncer coalesces bursts of gap detections into a
@@ -501,9 +635,23 @@ export function useWebSocket() {
                 const anyR = r as unknown as { epoch?: string }
                 _applyRecoverEpoch(anyR.epoch)
                 replayRecoveredEvents(r.events)
-                if (r.count === 0) _legacyRecoveryFallback()
+                if (r.count === 0) {
+                  // Resilience: ring buffer can't cover this gap (>500 events
+                  // aged out, or PM2 restart wiped it). Try the durable
+                  // transcript via /messages?since= before falling back to the
+                  // legacy single-response recover. This is the path that
+                  // unfreezes the chat after the kind of multi-hour gap the
+                  // 7 May 2026 DeepSeek storm produced.
+                  _runExtendedRecovery('reconnect_ring_empty').then(added => {
+                    if (added === 0) _legacyRecoveryFallback()
+                  })
+                }
               }).catch(() => {
-                _legacyRecoveryFallback()
+                // Ring-buffer recover failed - try extended recovery before
+                // falling back to legacy single-response recover.
+                _runExtendedRecovery('reconnect_ring_failed').then(added => {
+                  if (added === 0) _legacyRecoveryFallback()
+                })
               }).finally(() => {
                 setConnectionState('connected')
               })
@@ -570,6 +718,15 @@ export function useWebSocket() {
           if (wsRef.current !== ws) return
           const msg = JSON.parse(event.data)
           const cortex = useCortexStore.getState()
+
+          // Stale-stream watchdog: every WS message resets the last-event
+          // clock. Liveness heartbeats also bump the dedicated liveness clock
+          // so the watchdog distinguishes "events flowing" from "heartbeats
+          // only, no real progress". (See _startStaleWatchdog.)
+          const _isLivenessHeartbeat =
+            msg && msg.type === 'os-session:status' && msg.status === 'live'
+          _markEventReceived(_isLivenessHeartbeat)
+          _startStaleWatchdog()
 
           // ─── Pinnacle P1: seq tracking + gap detection ────────────────
           // Backend stamps every broadcast with { seq, ts, type, ... }. If we
@@ -779,7 +936,19 @@ export function useWebSocket() {
                 } else if (raw === 'complete' || raw === 'handover_complete') {
                   next = 'complete'
                 } else if (raw === 'error') {
-                  next = 'error'
+                  // Resilience: route through the dedicated error handler so
+                  // partial streamText/tools/thinking are finalised into a
+                  // message before status flips. Without this the partial
+                  // response was silently lost and the UI showed nothing.
+                  // _handleErrorStatus calls setStatus('error') itself and
+                  // populates lastErrorAt/lastErrorReason for the retry pill.
+                  const reason =
+                    (typeof msg.reason === 'string' ? msg.reason : null) ||
+                    (typeof msg.error === 'string' ? msg.error : null) ||
+                    (msg.detail && typeof msg.detail === 'string' ? msg.detail : null)
+                  _handleErrorStatus(reason)
+                  if (msg.sessionId) osStore.setSessionId(msg.sessionId)
+                  break
                 } else if (raw === 'idle') {
                   next = 'idle'
                 } else if (raw) {
