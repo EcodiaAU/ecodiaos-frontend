@@ -110,15 +110,18 @@ export function ConductorPresence() {
         />
       </mesh>
 
-      {/* Lattice: counter-rotating torus knot wireframe */}
+      {/* Lattice: counter-rotating torus knot wireframe.
+          Tight radius (1.35) so it stays clear of the rising chat-beam messages. */}
       <mesh ref={latticeRef}>
-        <torusKnotGeometry args={[1.85, 0.05, 200, 18, 3, 7]} />
+        <torusKnotGeometry args={[1.35, 0.04, 200, 18, 3, 7]} />
         <meshBasicMaterial color={AMBIENT_PALETTE.coreGlow} transparent opacity={0.32} wireframe />
       </mesh>
 
-      {/* Outer halo plane - subtle ember bloom anchor */}
+      {/* Outer halo plane - subtle ember bloom anchor.
+          Compact ring (1.55-1.95) hugging the core so it does not occlude
+          the chat-beam billboards stacking up above origin. */}
       <mesh ref={haloRef} rotation={[0, 0, 0]}>
-        <ringGeometry args={[2.4, 3.6, 64]} />
+        <ringGeometry args={[1.55, 1.95, 64]} />
         <meshBasicMaterial color={AMBIENT_PALETTE.coreGlow} transparent opacity={0.08} side={THREE.DoubleSide} />
       </mesh>
     </group>

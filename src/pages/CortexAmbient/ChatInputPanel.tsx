@@ -50,7 +50,9 @@ export function ChatInputPanel() {
     const text = value
     setValue('')
     try {
-      await api.post('/api/os-session/message', { content: text, priority: false })
+      // api client baseURL is already '/api'; do NOT double-prefix or every send 404s
+      // (text would clear, request fail, then catch path restores it -> "disappear and reappear" bug).
+      await api.post('/os-session/message', { content: text, priority: false })
     } catch (err) {
       // restore on error
       setValue(text)

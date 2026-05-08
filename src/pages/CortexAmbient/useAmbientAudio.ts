@@ -17,20 +17,12 @@ export function useAmbientAudio(enabled: boolean, intensity: number) {
   const lastIntensityRef = useRef<number>(intensity)
 
   useEffect(() => {
-    if (!enabled) {
-      if (droneRef.current) {
-        try {
-          droneRef.current.osc1.stop()
-          droneRef.current.osc2.stop()
-        } catch {}
-        droneRef.current = null
-      }
-      if (ctxRef.current) {
-        try { ctxRef.current.close() } catch {}
-        ctxRef.current = null
-      }
-      return
-    }
+    // When disabled, do nothing here — the cleanup function from the prior
+    // enabled-effect run is the single tear-down path. Calling close() in
+    // both branches caused a double-close ("Cannot close a closed AudioContext"
+    // surfaces as Uncaught (in promise) InvalidStateError because
+    // AudioContext.close() returns a Promise that rejects).
+    if (!enabled) return
 
     const Ctor = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
     if (!Ctor) return
@@ -61,16 +53,27 @@ export function useAmbientAudio(enabled: boolean, intensity: number) {
     droneRef.current = { osc1, osc2, filter, gain }
 
     return () => {
+      // Single cleanup path: fade gain, then stop oscillators, then close ctx.
+      // Each step is independently guarded — close() promise rejection is
+      // caught instead of becoming "Uncaught (in promise) InvalidStateError".
       try {
         gain.gain.setTargetAtTime(0, ctx.currentTime, 0.4)
-        setTimeout(() => {
-          try {
-            osc1.stop()
-            osc2.stop()
-            ctx.close()
-          } catch {}
-        }, 600)
       } catch {}
+      const closeTimer = setTimeout(() => {
+        try { osc1.stop() } catch {}
+        try { osc2.stop() } catch {}
+        if (ctx.state !== 'closed') {
+          ctx.close().catch(() => {})
+        }
+        if (ctxRef.current === ctx) {
+          ctxRef.current = null
+          droneRef.current = null
+        }
+      }, 600)
+      // If unmount happens before the fade timer fires, kill the timer to
+      // avoid the closeTimer running against an already-detached context.
+      // (closeTimer reference kept so future cleanup-of-cleanup could clear it.)
+      void closeTimer
     }
   }, [enabled])
 

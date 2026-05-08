@@ -16,8 +16,12 @@ import * as THREE from 'three'
 import { useOSSessionStore, type OSSessionMessage } from '@/store/osSessionStore'
 import { AMBIENT_PALETTE } from './palette'
 
-const MAX_MESSAGES = 8
-const BEAM_HEIGHT = 7
+const MAX_MESSAGES = 5
+const BEAM_HEIGHT = 6
+// Vertical anchor — lifted above the conductor's torus-knot lattice (radius 1.35)
+// so the rising message planes never overlap the central presence.
+const BEAM_BASE_Y = 2.4
+const MESSAGE_SPACING = 0.72
 
 export function ChatBeam() {
   const messages = useOSSessionStore((s) => s.messages)
@@ -38,10 +42,10 @@ export function ChatBeam() {
   })
 
   return (
-    <group position={[0, 0, 0]}>
-      {/* The beam itself - a faint ember pillar */}
+    <group position={[0, BEAM_BASE_Y, 0]}>
+      {/* The beam itself - a faint ember pillar, anchored above the conductor */}
       <mesh ref={beamRef} position={[0, BEAM_HEIGHT / 2, 0]}>
-        <cylinderGeometry args={[0.06, 0.18, BEAM_HEIGHT, 16, 1, true]} />
+        <cylinderGeometry args={[0.05, 0.16, BEAM_HEIGHT, 16, 1, true]} />
         <meshBasicMaterial
           color={AMBIENT_PALETTE.coreGlow}
           transparent
@@ -51,7 +55,8 @@ export function ChatBeam() {
         />
       </mesh>
 
-      {/* Message planes drifting upward */}
+      {/* Message planes drifting upward — newest at bottom of beam, oldest at top.
+          Stack stays inside the visible camera frustum (y ≈ 2.4 → 5.2 at z = 0). */}
       {recent.map((msg, idx) => {
         const offsetFromTop = recent.length - 1 - idx // 0 = newest at bottom of beam
         const isActive = idx === recent.length - 1
@@ -60,7 +65,7 @@ export function ChatBeam() {
             key={msg.id}
             content={msg.content}
             role={msg.role}
-            yOffset={1.5 + offsetFromTop * 0.78}
+            yOffset={offsetFromTop * MESSAGE_SPACING}
             active={isActive}
             ageIndex={offsetFromTop}
           />
@@ -98,29 +103,37 @@ function MessagePlane({ content, role, yOffset, active, ageIndex }: MessagePlane
   return (
     <group ref={groupRef} position={[0, startY, 0]}>
       <Billboard>
+        {/* High-opacity dark backdrop so chat reads cleanly against the scene */}
         <mesh>
-          <planeGeometry args={[3.6, 0.9]} />
-          <meshBasicMaterial color={'#0a0d12'} transparent opacity={0.62 * opacityTarget} />
+          <planeGeometry args={[4.2, 1.05]} />
+          <meshBasicMaterial color={'#06080c'} transparent opacity={0.92 * opacityTarget} depthWrite={false} />
+        </mesh>
+        {/* Hairline ember edge to keep the panel feeling anchored, not floating mid-scene */}
+        <mesh position={[0, 0, -0.001]}>
+          <planeGeometry args={[4.26, 1.11]} />
+          <meshBasicMaterial color={AMBIENT_PALETTE.coreGlow} transparent opacity={0.18 * opacityTarget} depthWrite={false} />
         </mesh>
         <Text
-          position={[-1.6, 0.32, 0.01]}
-          fontSize={0.09}
+          position={[-1.9, 0.36, 0.01]}
+          fontSize={0.1}
           color={tint}
           anchorX="left"
           anchorY="middle"
           outlineColor="#000"
-          outlineWidth={0.003}
+          outlineWidth={0.004}
         >
           {role === 'user' ? 'TATE' : 'ECODIAOS'}
         </Text>
         <Text
-          position={[0, 0, 0.01]}
-          fontSize={0.11}
-          color={AMBIENT_PALETTE.text}
-          maxWidth={3.3}
+          position={[0, -0.04, 0.01]}
+          fontSize={0.13}
+          color={'#ffffff'}
+          maxWidth={3.9}
           anchorX="center"
           anchorY="middle"
           fillOpacity={opacityTarget}
+          outlineColor="#000"
+          outlineWidth={0.0025}
         >
           {preview + (truncated ? '...' : '')}
         </Text>
