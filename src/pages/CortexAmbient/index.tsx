@@ -15,6 +15,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { Stars } from '@react-three/drei'
+import * as THREE from 'three'
 
 import { ConductorPresence } from './ConductorPresence'
 import { ForkOrbits } from './ForkOrbits'
@@ -45,6 +46,11 @@ function CameraBreath() {
 interface AmbientSceneProps {
   audioEnabled: boolean
 }
+
+/** Module-singleton Vector2 — postprocessing v2's ChromaticAberration expects a
+ *  real THREE.Vector2 instance, not a tuple. Recreating it per render would
+ *  thrash the effect's uniform allocation. */
+const CHROMATIC_OFFSET = new THREE.Vector2(0.0008, 0.0012)
 
 function AmbientScene({ audioEnabled }: AmbientSceneProps) {
   const statusRows = useStatusBoard()
@@ -82,7 +88,7 @@ function AmbientScene({ audioEnabled }: AmbientSceneProps) {
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.18} luminanceSmoothing={0.42} mipmapBlur />
         <Vignette eskil={false} offset={0.18} darkness={0.78} />
-        <ChromaticAberration offset={[0.0008, 0.0012] as unknown as [number, number]} radialModulation modulationOffset={0.4} />
+        <ChromaticAberration offset={CHROMATIC_OFFSET} radialModulation modulationOffset={0.4} />
       </EffectComposer>
 
       {/* Hidden but mounted - audio engine wired off the conductor */}
