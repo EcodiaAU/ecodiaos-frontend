@@ -20,6 +20,7 @@ import {
   Paperclip, FileText, X, Trash2, Image as ImageIcon, Square,
   Inbox, ChevronRight, ArrowDown,
   AlertTriangle, Wifi, WifiOff, Loader2,
+  RefreshCw, ArrowUp,
 } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -28,7 +29,7 @@ import { MessageErrorBoundary } from '@/components/shared/MessageErrorBoundary'
 import { stripDoctrineNoise } from '@/utils/stripDoctrineNoise'
 import { useOSSessionStore, type OSSessionMessage, type LiveToolCall, type TurnTelemetry, type InlineBannerEntry } from '@/store/osSessionStore'
 import { useConnectionStore } from '@/store/connectionStore'
-import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS } from '@/api/osSession'
+import { sendOSMessage, restartOS, getOSStatus, recoverResponse, uploadAttachment, abortOS, getMessagesSince } from '@/api/osSession'
 import { listPending, cancelMessage, promoteMessage, updateMessage } from '@/api/messageQueue'
 import type { QueuedMessage } from '@/api/messageQueue'
 import { ForksDrawer } from '@/components/ForksDrawer'
@@ -397,6 +398,7 @@ const UserMessage = memo(function UserMessage({ message }: { message: OSSessionM
   if (!cleaned) return null
   return (
     <motion.div
+      id={`os-msg-${message.id}`}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 90, damping: 22 }}
@@ -452,6 +454,7 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
 
   return (
     <motion.div
+      id={`os-msg-${message.id}`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 80, damping: 22, delay: 0.04 }}
@@ -1867,6 +1870,15 @@ export default function CCStream() {
   // Pinnacle P1: surface the pre-token "thinking" pulse during the gap
   // between assistant_message_starting and first text/tool event.
   const assistantTurnStarting = useOSSessionStore(s => s.assistantTurnStarting)
+  // Resilience pills (chat-resilience fork, 7 May 2026 freeze origin):
+  // - lastErrorAt drives the "Stream errored - tap to recover" pill.
+  // - recoveredMessageCount drives the "N new messages" pill after an
+  //   extended-recovery replay populates missed messages from the durable
+  //   transcript.
+  const lastErrorAt = useOSSessionStore(s => s.lastErrorAt)
+  const lastErrorReason = useOSSessionStore(s => s.lastErrorReason)
+  const recoveredMessageCount = useOSSessionStore(s => s.recoveredMessageCount)
+  const lastUserMessageAt = useOSSessionStore(s => s.lastUserMessageAt)
 
   // ─── Message queue state ────────────────────────────────────────────
   const [sendMode, setSendMode] = useState<'direct' | 'queue'>(() => {
@@ -2236,6 +2248,61 @@ export default function CCStream() {
     useOSSessionStore.getState().clearMessages()
   }, [])
 
+  // Resilience: tap-to-recover handler for the "Stream errored" pill. Fires
+  // an extended-recovery via /os-session/messages?since= using whichever
+  // recent timestamp we trust most (last user message > last visible
+  // message > 24h fallback). Resets status to idle on success regardless
+  // of whether new messages were found - the user has seen the affordance
+  // fire and the chat is unfrozen.
+  const [recoverPending, setRecoverPending] = useState(false)
+  const handleRecoverError = useCallback(async () => {
+    setRecoverPending(true)
+    try {
+      const store = useOSSessionStore.getState()
+      let since: string | null = lastUserMessageAt
+      if (!since && store.messages.length > 0) {
+        const tail = store.messages[store.messages.length - 1]
+        const ts = tail.timestamp instanceof Date ? tail.timestamp : new Date(tail.timestamp)
+        since = ts.toISOString()
+      }
+      const result = await getMessagesSince(since || undefined)
+      store.injectRecoveredMessages(result.messages)
+      store.clearError()
+    } catch {
+      // Even on failure, clear the error - the user explicitly acted.
+      // Keeping the pill stuck after a tap is worse than the chat being
+      // briefly out-of-date; they can always reload the page.
+      useOSSessionStore.getState().clearError()
+    } finally {
+      setRecoverPending(false)
+    }
+  }, [lastUserMessageAt])
+
+  // Auto-dismiss the "N new messages" pill after 8s if untapped.
+  useEffect(() => {
+    if (recoveredMessageCount === 0) return
+    const t = setTimeout(() => {
+      useOSSessionStore.getState().clearRecoveredCount()
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [recoveredMessageCount])
+
+  // Scroll to first new message when "N new messages" pill is tapped.
+  // We approximate "first new" as the first message added by the recovery
+  // call - which lives at the position recoveredMessageCount messages from
+  // the tail. This works under the no-live-events-in-flight assumption
+  // (the user is in error/stale state when this pill is rendered).
+  const handleScrollToNew = useCallback(() => {
+    const store = useOSSessionStore.getState()
+    const idx = Math.max(0, store.messages.length - recoveredMessageCount)
+    const first = store.messages[idx]
+    if (first) {
+      const el = document.getElementById(`os-msg-${first.id}`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    store.clearRecoveredCount()
+  }, [recoveredMessageCount])
+
   const hasMessages = messages.length > 0
 
   return (
@@ -2384,6 +2451,71 @@ export default function CCStream() {
         }}
       >
         <div className="mx-auto max-w-3xl relative">
+          {/* Resilience: "Stream errored - tap to recover" pill (chat-resilience
+              fork, 7 May 2026 freeze origin). Renders when the backend emits an
+              error status; tapping calls /os-session/messages?since= to populate
+              missed transcript and clears the error. Auto-clears on next user
+              send via clearError() in addUserMessage path. */}
+          <AnimatePresence>
+            {lastErrorAt && (
+              <motion.button
+                key="stream-error-pill"
+                type="button"
+                onClick={handleRecoverError}
+                disabled={recoverPending}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-mono whitespace-nowrap shadow-sm hover:shadow-md transition-shadow disabled:opacity-60"
+                style={{
+                  background: 'rgba(194,91,72,0.10)',
+                  border: '1px solid rgba(194,91,72,0.32)',
+                  color: '#C25B48',
+                }}
+                title={lastErrorReason ? `Reason: ${lastErrorReason}` : 'Stream errored'}
+              >
+                {recoverPending
+                  ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
+                  : <AlertTriangle className="h-3 w-3" strokeWidth={2} />}
+                <span>
+                  {recoverPending ? 'Recovering…' : 'Stream errored — tap to recover'}
+                </span>
+                {!recoverPending && <RefreshCw className="h-3 w-3" strokeWidth={2} />}
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          {/* Resilience: "N new messages" pill - renders after extended-recovery
+              injects messages from the durable transcript that weren't visible.
+              Tap scrolls to the first new message; auto-dismisses after 8s. */}
+          <AnimatePresence>
+            {recoveredMessageCount > 0 && !lastErrorAt && (
+              <motion.button
+                key="recovered-count-pill"
+                type="button"
+                onClick={handleScrollToNew}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-mono whitespace-nowrap shadow-sm hover:shadow-md transition-shadow"
+                style={{
+                  background: 'rgba(27,122,61,0.10)',
+                  border: '1px solid rgba(27,122,61,0.32)',
+                  color: '#1B7A3D',
+                }}
+              >
+                <ArrowUp className="h-3 w-3" strokeWidth={2} />
+                <span>
+                  {recoveredMessageCount === 1
+                    ? '1 new message'
+                    : `${recoveredMessageCount} new messages`}
+                </span>
+              </motion.button>
+            )}
+          </AnimatePresence>
+
           {/* Queued confirmation flash */}
           <AnimatePresence>
             {queuedFlash && (

@@ -383,6 +383,12 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
         pendingTurnTelemetry: null,
         lastUserMessageAt: new Date().toISOString(),
         recoveryAttempted: false,
+        // Resilience: a fresh user send clears the error pill - either the
+        // user is moving on past the previous error or the new turn will
+        // re-establish flow. Either way the stale pill must dismiss.
+        lastErrorAt: null,
+        lastErrorReason: null,
+        recoveredMessageCount: 0,
       }
     })
   },
