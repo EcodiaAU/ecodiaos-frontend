@@ -30,6 +30,7 @@ import { Horizon } from './Horizon'
 import { PresenceHeader } from './PresenceHeader'
 import { ForksStrip } from './ForksStrip'
 import { StatusThreads } from './StatusThreads'
+import { StripRow } from './StripRow'
 import { Footer } from './Footer'
 import { useStatusBoard } from './useStatusBoard'
 import { useForks } from './useForks'
@@ -106,15 +107,48 @@ export default function CortexAmbientPage() {
         forkCount={runningCount}
       />
 
-      {/* CHAT — the lead surface. Own scroll, document feel. */}
-      <div className="ambient-chat-region" style={{ paddingTop: 18 }}>
+      {/* CHAT — the lead surface. Own scroll, document feel.
+          Round-4 (fork_moxykr7k_4cb6b2) Bug 1 fix: chat region is now
+          a min-height container so the empty state reserves visible
+          space and the input + strip-row don't collapse upward. The
+          ChatLog itself ALSO carries a min-height (50vh capped) for the
+          inner scroll surface. Both work together so first-paint reads
+          as a real workshop, not a jammed accordion. */}
+      <div
+        className="ambient-chat-region"
+        style={{
+          paddingTop: 18,
+          minHeight: 'min(56vh, 480px)',
+        }}
+      >
         <ChatLog />
       </div>
 
-      {/* INPUT — sticky-bottom of the chat region. */}
-      <ChatInputPanel />
+      {/* BOTTOM-STICKY REGION — input + condensed strip-row.
+          Round-4 (fork_moxykr7k_4cb6b2): the input was already sticky-bottom
+          on its own. We wrap input + new StripRow in a single sticky-bottom
+          stack so BOTH stay pinned to viewport bottom on every screen size.
+          Mobile: strip-row collapses to a single horizontally-scrollable line
+          showing "hands · N forks" tags + "working memory · N" + top-priority
+          row name. Desktop (>=1024px): both halves render inline.
+          The full ForksStrip + StatusThreads sections still render below
+          for users who scroll past the chat - this strip is at-a-glance
+          summary, not a replacement. */}
+      <div
+        className="ambient-bottom-stack"
+        style={{
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 25,
+        }}
+      >
+        <ChatInputPanel />
+        <StripRow forks={forks} rows={statusRows} />
+      </div>
 
-      {/* HANDS / FORKS — what the entity is doing right now. */}
+      {/* HANDS / FORKS — what the entity is doing right now.
+          Full detail. Sits below the sticky bottom-stack so users who
+          scroll past the chat see the live cards. */}
       <Section label={`hands · ${forks.length} fork${forks.length === 1 ? '' : 's'}`} dim={forks.length === 0}>
         <ForksStrip forks={forks} layout="horizontal" />
       </Section>

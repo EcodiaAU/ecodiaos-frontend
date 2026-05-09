@@ -1,6 +1,26 @@
 /**
  * ChatLog - the 2D readable chat overlay above the input panel.
  *
+ * Round-4 polish, 2026-05-09, fork_moxykr7k_4cb6b2:
+ *   - Bug 2 (auto-scroll yank): the previous round set the "stuck-to-bottom"
+ *     threshold at 24px. That is too tight - any non-trivial scroll-up to
+ *     re-read a streaming reply triggers the auto-scroll-to-bottom on every
+ *     stream tick, yanking the viewport back down. Tate verbatim 16:18 AEST
+ *     9 May 2026: "when you're spitting out text mid message, when I scroll
+ *     back up it just yanks me back down to your latest stuff, so I can't
+ *     properly read a message until it's finished".
+ *   - Threshold relaxed to 80px ("follow mode"). Outside follow mode the
+ *     viewport stays where the user put it; new tokens stream into the DOM
+ *     but the scroll position is preserved.
+ *   - "↓ N new" pill now shows a real count of new messages received while
+ *     follow-mode was suspended. Tap to jump back to live + resume follow.
+ *   - Pill design promoted to a more visible floating chip near bottom-right
+ *     of the chat region (not the previous tiny -top-3 ember dot which was
+ *     visually swallowed by the chat header).
+ *   - Min-height on the scroll surface bumped so the empty state (Bug 1
+ *     cramping) reserves visible space and the input + strip-row don't
+ *     collapse upward on first paint. Mobile 40vh, desktop 50vh, capped.
+ *
  * Round-3 bugfix, 2026-05-08, fork_mowu9a3g_f34229:
  *   - Markdown rendering: messages were being rendered as plain pre-wrapped
  *     text. Now wrapped in ReactMarkdown (remarkGfm + rehypeRaw) so headings,
@@ -69,44 +89,75 @@ export function ChatLog() {
   const streamText = useOSSessionStore((s) => s.streamText)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const [stickToBottom, setStickToBottom] = useState(true)
-  const [hasNew, setHasNew] = useState(false)
+  const [followMode, setFollowMode] = useState(true)
+  // Count of new messages received while follow-mode was suspended.
+  const [newCount, setNewCount] = useState(0)
+  // Track the message-array length the user last "saw" at bottom so we can
+  // compute newCount on subsequent length increases.
+  const lastSeenLenRef = useRef(0)
 
   const recent = useMemo(() => messages.slice(-MAX_RENDERED), [messages])
 
-  // Detect manual scroll-up; if user scrolls up, we stop auto-pinning.
+  // Mirror current recent.length into a ref so the onScroll handler (whose
+  // deps are intentionally empty so it isn't recreated every render) reads
+  // the live value instead of the stale closure value.
+  const recentLenRef = useRef(0)
+  useEffect(() => {
+    recentLenRef.current = recent.length
+  }, [recent.length])
+
+  // Detect manual scroll. Within FOLLOW_THRESHOLD_PX of bottom = follow-mode
+  // on. Beyond it = follow-mode suspended; auto-scroll inhibited so the user
+  // can read mid-stream without being yanked back down.
+  // Threshold widened from 24px to 80px per Tate verbatim 16:18 AEST 9 May.
+  const FOLLOW_THRESHOLD_PX = 80
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     const onScroll = () => {
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      const atBottom = distFromBottom < 24
-      setStickToBottom(atBottom)
-      if (atBottom) setHasNew(false)
+      const atBottom = distFromBottom < FOLLOW_THRESHOLD_PX
+      setFollowMode(atBottom)
+      if (atBottom) {
+        setNewCount(0)
+        lastSeenLenRef.current = recentLenRef.current
+      }
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Auto-scroll to bottom on message changes / live streaming, IF still pinned.
+  // On message-array growth: scroll to bottom IF in follow mode; otherwise
+  // bump the "N new" counter so the pill surfaces a real count.
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    if (stickToBottom) {
+    if (followMode) {
       el.scrollTop = el.scrollHeight
-      setHasNew(false)
+      lastSeenLenRef.current = recent.length
+      setNewCount(0)
     } else {
-      // Only mark new if a fresh message added (not just stream tick).
-      setHasNew(true)
+      const delta = recent.length - lastSeenLenRef.current
+      if (delta > 0) setNewCount(delta)
     }
-  }, [recent.length, stickToBottom])
+  }, [recent.length, followMode])
 
-  // Stream-tick auto-scroll without flipping hasNew on every chunk.
+  // Stream-tick: only auto-scroll if follow-mode is on. NEVER bump newCount
+  // on stream tick (otherwise the pill would race up by hundreds during a
+  // single assistant reply).
   useEffect(() => {
     const el = scrollRef.current
-    if (!el || !stickToBottom) return
+    if (!el || !followMode) return
     el.scrollTop = el.scrollHeight
-  }, [streamText, stickToBottom])
+  }, [streamText, followMode])
+
+  const jumpToBottom = () => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+    setFollowMode(true)
+    setNewCount(0)
+    lastSeenLenRef.current = recent.length
+  }
 
   const isStreaming = status === 'streaming'
   const isError = status === 'error'
@@ -122,9 +173,13 @@ export function ChatLog() {
           ref={scrollRef}
           className="ambient-chatlog-scroll"
           style={{
-            minHeight: 'min(48vh, 360px)',
+            // Bug 1 fix: reserve visible space so empty state doesn't collapse
+            // upward under the input + strip-row jam. 40vh mobile, 50vh desktop.
+            minHeight: 'min(50vh, 420px)',
             maxHeight: 'min(60vh, 600px)',
             overflowY: 'auto',
+            // Smooth jump-to-bottom but doesn't smooth ordinary user scrolls.
+            scrollBehavior: 'auto',
             background: 'linear-gradient(180deg, rgba(8,10,14,0.55) 0%, rgba(6,7,10,0.78) 100%)',
             borderRadius: 6,
             border: '1px solid rgba(255,178,122,0.10)',
@@ -145,22 +200,31 @@ export function ChatLog() {
           </div>
         </div>
 
-        {/* Floating "new" pill when user has scrolled up */}
-        {hasNew && !stickToBottom && (
+        {/* Floating "↓ N new" pill when user has scrolled up beyond
+            FOLLOW_THRESHOLD_PX. Tap to jump back to live + resume follow.
+            Positioned bottom-right of the chat region (not -top-3) so it's
+            visible whether the user is mid-scroll or near the bottom edge. */}
+        {!followMode && (
           <button
-            onClick={() => {
-              const el = scrollRef.current
-              if (el) el.scrollTop = el.scrollHeight
-              setStickToBottom(true)
-              setHasNew(false)
-            }}
-            className="absolute right-3 -top-3 rounded-full px-3 py-1 text-[9px] uppercase tracking-[0.22em] text-[#06070a] font-medium shadow-lg"
+            type="button"
+            onClick={jumpToBottom}
+            aria-label={
+              newCount > 0
+                ? `${newCount} new ${newCount === 1 ? 'message' : 'messages'} - jump to bottom`
+                : 'jump to bottom'
+            }
+            className="absolute right-3 bottom-3 rounded-full px-3 py-1.5 text-[10px] font-medium shadow-lg transition-transform hover:scale-105"
             style={{
               background: '#ffb27a',
-              boxShadow: '0 0 12px rgba(255,178,122,0.55)',
+              color: '#06070a',
+              letterSpacing: '0.05em',
+              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+              boxShadow: '0 4px 16px rgba(255,178,122,0.45), 0 0 12px rgba(255,178,122,0.35)',
+              border: '1px solid rgba(255,178,122,0.85)',
+              zIndex: 5,
             }}
           >
-            new ↓
+            ↓ {newCount > 0 ? `${newCount} new` : 'jump to live'}
           </button>
         )}
       </div>

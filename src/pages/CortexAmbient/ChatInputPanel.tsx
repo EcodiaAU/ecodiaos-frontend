@@ -109,10 +109,13 @@ export function ChatInputPanel() {
   return (
     <form
       onSubmit={onSubmit}
-      className="ambient-input w-full px-4 pb-4 pt-2 lg:static"
+      className="ambient-input w-full px-4 pb-2 pt-2"
       style={{
-        position: 'sticky',
-        bottom: 0,
+        // Round-4 (fork_moxykr7k_4cb6b2): sticky positioning lifted to the
+        // parent ambient-bottom-stack wrapper in index.tsx so input + the
+        // new StripRow share a single sticky context. Position here is just
+        // relative-in-flow inside that wrapper.
+        position: 'relative',
         zIndex: 20,
         background:
           'linear-gradient(180deg, rgba(6,7,10,0) 0%, rgba(6,7,10,0.86) 30%, rgba(6,7,10,0.96) 100%)',
