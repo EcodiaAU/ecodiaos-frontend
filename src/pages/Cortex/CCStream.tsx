@@ -2608,7 +2608,7 @@ export default function CCStream() {
                       ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
                       : <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />}
                   </motion.button>
-                ) : messages.length > 0 ? (
+                ) : (
                   <motion.button
                     key="restart"
                     initial={{ opacity: 0, scale: 0.8 }}
@@ -2621,7 +2621,7 @@ export default function CCStream() {
                   >
                     <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
                   </motion.button>
-                ) : null}
+                )}
               </AnimatePresence>
             </div>
           </div>
