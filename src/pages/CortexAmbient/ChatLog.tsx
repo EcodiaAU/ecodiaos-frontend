@@ -106,11 +106,10 @@ export function ChatLog() {
     recentLenRef.current = recent.length
   }, [recent.length])
 
-  // Detect manual scroll. Within FOLLOW_THRESHOLD_PX of bottom = follow-mode
-  // on. Beyond it = follow-mode suspended; auto-scroll inhibited so the user
-  // can read mid-stream without being yanked back down.
-  // Threshold widened from 24px to 80px per Tate verbatim 16:18 AEST 9 May.
-  const FOLLOW_THRESHOLD_PX = 80
+  // Follow-resume requires being at the very bottom (16px slack for sub-pixel
+  // rounding). Tate verbatim: "unless I go to the very bottom of the scroll
+  // and leave it there".
+  const FOLLOW_THRESHOLD_PX = 16
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -167,16 +166,14 @@ export function ChatLog() {
 
   return (
     <div className="ambient-chatlog relative w-full px-4">
-      <div className="mx-auto max-w-3xl relative">
+      <div className="mx-auto max-w-5xl relative">
         {/* Scroll surface — flows in document layout, not fixed-overlay */}
         <div
           ref={scrollRef}
           className="ambient-chatlog-scroll"
           style={{
-            // Bug 1 fix: reserve visible space so empty state doesn't collapse
-            // upward under the input + strip-row jam. 40vh mobile, 50vh desktop.
-            minHeight: 'min(50vh, 420px)',
-            maxHeight: 'min(60vh, 600px)',
+            minHeight: 'min(58vh, 560px)',
+            maxHeight: 'min(72vh, 820px)',
             overflowY: 'auto',
             // Smooth jump-to-bottom but doesn't smooth ordinary user scrolls.
             scrollBehavior: 'auto',

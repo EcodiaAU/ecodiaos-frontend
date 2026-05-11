@@ -49,7 +49,7 @@ function Section({ label, children, dim = false }: SectionProps) {
       <div
         className="px-4"
         style={{
-          maxWidth: 880,
+          maxWidth: 1120,
           margin: '0 auto',
           color: AMBIENT_PALETTE.textDim,
           fontFamily: "'Inter', system-ui, sans-serif",
@@ -62,7 +62,7 @@ function Section({ label, children, dim = false }: SectionProps) {
       >
         {label}
       </div>
-      <div style={{ maxWidth: 880, margin: '0 auto' }}>{children}</div>
+      <div style={{ maxWidth: 1120, margin: '0 auto' }}>{children}</div>
     </section>
   )
 }
@@ -120,7 +120,7 @@ export default function CortexAmbientPage() {
         className="ambient-chat-region"
         style={{
           paddingTop: 18,
-          minHeight: 'min(56vh, 480px)',
+          minHeight: 'min(62vh, 600px)',
         }}
       >
         <ChatLog />
