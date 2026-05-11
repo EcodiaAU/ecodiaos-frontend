@@ -304,11 +304,16 @@ export function useVoiceRecorder(opts?: UseVoiceRecorderOptions): UseVoiceRecord
     }
     mimeRef.current = chosen
 
-    // Session ID: keep existing if persisting, otherwise generate fresh
-    if (!persistRef.current) {
-      const sid = newUUID()
-      sessionIdRef.current = sid
-      setSessionId(sid)
+    // Always generate a fresh session ID per startRecording() so seq always
+    // starts at 0 within a unique session. If persisting, update localStorage
+    // so page refreshes show the most recent session ID in the footer.
+    // (The old behaviour of reusing the persisted ID across multiple presses
+    // caused duplicate seq=0 entries for different chunks in the same session.)
+    const sid = newUUID()
+    sessionIdRef.current = sid
+    setSessionId(sid)
+    if (persistRef.current) {
+      try { window.localStorage.setItem(LS_SESSION_KEY, sid) } catch { /* noop */ }
     }
 
     seqRef.current = 0
