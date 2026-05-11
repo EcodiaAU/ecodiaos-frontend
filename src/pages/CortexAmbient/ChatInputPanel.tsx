@@ -27,7 +27,7 @@
  * Bottom-anchored, narrow, glassy. Posts to /api/os-session/message.
  */
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
-import { sendOSMessage } from '@/api/osSession'
+import { sendOSMessage, abortOS } from '@/api/osSession'
 import { useOSSessionStore } from '@/store/osSessionStore'
 
 const PLACEHOLDERS = [
@@ -41,12 +41,20 @@ const PLACEHOLDERS = [
 export function ChatInputPanel() {
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
+  const [aborting, setAborting] = useState(false)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [hasFocused, setHasFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const isStreaming = useOSSessionStore((s) => s.status === 'streaming')
   const addUserMessage = useOSSessionStore((s) => s.addUserMessage)
+
+  const onAbort = async () => {
+    if (aborting) return
+    setAborting(true)
+    try { await abortOS() } catch {}
+    finally { setAborting(false) }
+  }
 
   // Slow placeholder rotation for life
   useEffect(() => {
@@ -153,6 +161,7 @@ export function ChatInputPanel() {
               style={{ minHeight: '24px', maxHeight: '30vh', lineHeight: '1.45' }}
               disabled={sending}
             />
+            {isStreaming && <StopButton aborting={aborting} onAbort={onAbort} />}
             <SubmitButton sending={sending} canSubmit={canSubmit} />
           </div>
 
@@ -170,6 +179,42 @@ export function ChatInputPanel() {
         </div>
       </div>
     </form>
+  )
+}
+
+function StopButton({ aborting, onAbort }: { aborting: boolean; onAbort: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onAbort}
+      disabled={aborting}
+      aria-label="stop turn"
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 999,
+        border: '1px solid rgba(248,113,113,0.50)',
+        background: 'radial-gradient(circle at 50% 40%, rgba(248,113,113,0.28) 0%, rgba(248,113,113,0.04) 70%)',
+        color: aborting ? 'rgba(248,113,113,0.45)' : '#f87171',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        cursor: aborting ? 'default' : 'pointer',
+        transition: 'all 200ms ease-out',
+        boxShadow: '0 0 10px rgba(248,113,113,0.18)',
+      }}
+    >
+      {aborting ? <SpinnerGlyph /> : <StopGlyph />}
+    </button>
+  )
+}
+
+function StopGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+    </svg>
   )
 }
 
