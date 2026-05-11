@@ -187,8 +187,9 @@ export async function abortFork(forkId: string, reason = 'manual_abort') {
   return data as { aborted: boolean; fork_id?: string; reason?: string }
 }
 
-/** Upload a file to Supabase Storage via the backend, returns a public URL.
- * Pass either `base64` (binary, optionally as a data URL) or `text` (raw UTF-8). */
+/** Upload a file to Supabase Storage via the backend, returns a public URL
+ * + any server-extracted text (PDF/docx/txt-like files). Pass either `base64`
+ * (binary, optionally as a data URL) or `text` (raw UTF-8). */
 export async function uploadAttachment(file: {
   name: string
   type: string
@@ -196,5 +197,11 @@ export async function uploadAttachment(file: {
   text?: string
 }) {
   const { data } = await api.post('/os-session/upload', file)
-  return data as { url: string; name: string; type: string; size: number }
+  return data as {
+    url: string
+    name: string
+    type: string
+    size: number
+    extracted_text: string
+  }
 }

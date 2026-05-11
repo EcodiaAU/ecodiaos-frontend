@@ -27,8 +27,53 @@
  * Bottom-anchored, narrow, glassy. Posts to /api/os-session/message.
  */
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
-import { sendOSMessage, abortOS } from '@/api/osSession'
+import { sendOSMessage, abortOS, uploadAttachment } from '@/api/osSession'
 import { useOSSessionStore } from '@/store/osSessionStore'
+
+interface UploadedAttachment {
+  url: string
+  name: string
+  type: string
+  size: number
+  extracted_text: string
+}
+
+interface PendingAttachment {
+  localId: string
+  name: string
+  size: number
+  type: string
+  status: 'uploading' | 'done' | 'error'
+  error?: string
+  result?: UploadedAttachment
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`
+  return `${(n / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function buildEnrichedMessage(text: string, attachments: UploadedAttachment[]): string {
+  if (attachments.length === 0) return text
+  const blocks = attachments.map((a) => {
+    const head = `<attachment name="${a.name}" type="${a.type}" size="${a.size}" url="${a.url}">`
+    const body = a.extracted_text
+      ? `\n${a.extracted_text}\n`
+      : `\n(binary file — fetch from url to inspect)\n`
+    return `${head}${body}</attachment>`
+  })
+  return `${text}\n\n${blocks.join('\n\n')}`.trim()
+}
 
 const PLACEHOLDERS = [
   'speak to ecodiaos',
@@ -44,7 +89,9 @@ export function ChatInputPanel() {
   const [aborting, setAborting] = useState(false)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [hasFocused, setHasFocused] = useState(false)
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const isStreaming = useOSSessionStore((s) => s.status === 'streaming')
   const addUserMessage = useOSSessionStore((s) => s.addUserMessage)
@@ -90,29 +137,73 @@ export function ChatInputPanel() {
     el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
   }, [value])
 
+  const uploadOne = async (file: File) => {
+    const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setAttachments((prev) => [
+      ...prev,
+      { localId, name: file.name, size: file.size, type: file.type || 'application/octet-stream', status: 'uploading' },
+    ])
+    try {
+      const dataUrl = await readFileAsBase64(file)
+      const result = await uploadAttachment({
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        base64: dataUrl,
+      })
+      setAttachments((prev) =>
+        prev.map((a) => (a.localId === localId ? { ...a, status: 'done', result } : a)),
+      )
+    } catch (err: any) {
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.localId === localId
+            ? { ...a, status: 'error', error: err?.message || 'upload failed' }
+            : a,
+        ),
+      )
+    }
+  }
+
+  const onFilesSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const list = Array.from(files)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    for (const f of list) {
+      // Fire-and-forget; uploads run in parallel.
+      void uploadOne(f)
+    }
+  }
+
+  const removeAttachment = (localId: string) => {
+    setAttachments((prev) => prev.filter((a) => a.localId !== localId))
+  }
+
+  const uploadsInFlight = attachments.some((a) => a.status === 'uploading')
+
   const onSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (!value.trim() || sending) return
+    if (sending || uploadsInFlight) return
+    if (!value.trim() && attachments.length === 0) return
     setSending(true)
     const text = value
+    const uploaded = attachments
+      .filter((a): a is PendingAttachment & { result: UploadedAttachment } => a.status === 'done' && !!a.result)
+      .map((a) => a.result)
+    const enriched = buildEnrichedMessage(text, uploaded)
     setValue('')
-    // Optimistic: surface the user bubble immediately. addUserMessage also
-    // flips status to 'streaming' so the StreamingRibbon and "thinking…"
-    // pulse fire even before the WS opens its first text_delta.
-    addUserMessage(text)
+    setAttachments([])
+    addUserMessage(enriched)
     try {
-      // Canonical send action - POSTs { message, mode } which matches the
-      // backend's req.body.message check at routes/osSession.js:30.
-      await sendOSMessage(text, 'direct')
+      await sendOSMessage(enriched, 'direct')
     } catch (err) {
-      // restore on transport failure
       setValue(text)
     } finally {
       setSending(false)
     }
   }
 
-  const canSubmit = !sending && value.trim().length > 0
+  const canSubmit =
+    !sending && !uploadsInFlight && (value.trim().length > 0 || attachments.some((a) => a.status === 'done'))
 
   return (
     <form
@@ -142,8 +233,30 @@ export function ChatInputPanel() {
             transition: 'box-shadow 320ms ease-out',
           }}
         >
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+              {attachments.map((a) => (
+                <AttachmentChip
+                  key={a.localId}
+                  attachment={a}
+                  onRemove={() => removeAttachment(a.localId)}
+                />
+              ))}
+            </div>
+          )}
+
           <div className="flex items-end gap-2 px-3 py-2.5">
-            <span className="text-[10px] uppercase tracking-[0.2em] text-[#ffb27a]/80 pt-1.5 select-none">›</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => onFilesSelected(e.target.files)}
+            />
+            <AttachButton
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+            />
             <textarea
               ref={inputRef}
               value={value}
@@ -294,6 +407,115 @@ function StreamingRibbon({ active }: { active: boolean }) {
           boxShadow: '0 0 6px rgba(255,178,122,0.7)',
         }}
       />
+    </div>
+  )
+}
+
+function AttachButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="attach file"
+      title="attach file"
+      className="flex items-center justify-center flex-shrink-0"
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 999,
+        border: '1px solid rgba(255,255,255,0.10)',
+        background: 'transparent',
+        color: disabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,178,122,0.85)',
+        cursor: disabled ? 'default' : 'pointer',
+        transition: 'all 180ms ease-out',
+      }}
+    >
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+        strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10.5 4 L5.5 9 a2 2 0 0 0 2.8 2.8 L13 7 a3.5 3.5 0 0 0 -5 -5 L3 7 a5 5 0 0 0 7 7 L14 10" />
+      </svg>
+    </button>
+  )
+}
+
+function AttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: PendingAttachment
+  onRemove: () => void
+}) {
+  const isUploading = attachment.status === 'uploading'
+  const isError = attachment.status === 'error'
+  const result = attachment.result
+  const hasExtraction = !!result?.extracted_text
+  const borderColor = isError
+    ? 'rgba(248,113,113,0.45)'
+    : isUploading
+    ? 'rgba(255,178,122,0.30)'
+    : 'rgba(255,178,122,0.45)'
+
+  return (
+    <div
+      className="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px]"
+      style={{
+        background: 'rgba(255,178,122,0.06)',
+        border: `1px solid ${borderColor}`,
+        color: isError ? '#f87171' : 'rgba(255,255,255,0.88)',
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        letterSpacing: '0.02em',
+        maxWidth: 280,
+      }}
+      title={
+        isError
+          ? `error: ${attachment.error}`
+          : isUploading
+          ? 'uploading…'
+          : hasExtraction
+          ? `${attachment.name} · text extracted`
+          : attachment.name
+      }
+    >
+      {isUploading ? (
+        <SpinnerGlyph />
+      ) : isError ? (
+        <span aria-hidden style={{ color: '#f87171' }}>!</span>
+      ) : (
+        <span
+          aria-hidden
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 999,
+            background: hasExtraction ? '#5fe89d' : '#ffb27a',
+            boxShadow: `0 0 4px ${hasExtraction ? '#5fe89d' : '#ffb27a'}`,
+            display: 'inline-block',
+          }}
+        />
+      )}
+      <span className="truncate" style={{ maxWidth: 180 }}>
+        {attachment.name}
+      </span>
+      <span style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
+        {formatBytes(attachment.size)}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="remove attachment"
+        style={{
+          marginLeft: 2,
+          color: 'rgba(255,255,255,0.45)',
+          cursor: 'pointer',
+          padding: 0,
+          background: 'transparent',
+          border: 'none',
+          lineHeight: 1,
+        }}
+      >
+        ×
+      </button>
     </div>
   )
 }
