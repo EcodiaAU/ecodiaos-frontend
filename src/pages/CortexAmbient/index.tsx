@@ -91,11 +91,13 @@ export default function CortexAmbientPage() {
 
   return (
     <div
-      className="ambient-root min-h-screen w-full"
+      className="ambient-root"
       style={{
+        position: 'absolute',
+        inset: 0,
         background: AMBIENT_PALETTE.base,
         color: AMBIENT_PALETTE.text,
-        // Single page-level vertical scroll. Sub-regions can scroll within.
+        overflowY: 'auto',
         overflowX: 'hidden',
       }}
     >

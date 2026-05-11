@@ -1,13 +1,4 @@
-/**
- * StatusThreads — what is on the entity's mind.
- *
- * Round-3, fork_mowtlsvo_95bffd (manager fork_mowtf5s4_82c7f4).
- *
- * Read-only viewport into status_board. Dense rows, ~52px each.
- * Sort: priority asc, then last_touched desc.
- *
- * Spec §4.4.
- */
+import { useState } from 'react'
 import type { StatusRow } from './useStatusBoard'
 import { AMBIENT_PALETTE, actionByColor } from './palette'
 
@@ -21,24 +12,10 @@ function priorityChip(priority: number | null | undefined): {
   bg: string
 } {
   const p = priority ?? 5
-  if (p === 1)
-    return { label: 'P1', color: '#ffd9d9', bg: 'rgba(232,90,90,0.22)' }
-  if (p === 2)
-    return { label: 'P2', color: '#ffe7c2', bg: 'rgba(240,168,71,0.22)' }
-  if (p === 3)
-    return { label: 'P3', color: '#cdf6ee', bg: 'rgba(90,217,200,0.18)' }
-  return {
-    label: `P${p}`,
-    color: AMBIENT_PALETTE.textDim,
-    bg: 'rgba(120,130,148,0.14)',
-  }
-}
-
-function nameColor(priority: number | null | undefined): string {
-  const p = priority ?? 5
-  if (p <= 2) return AMBIENT_PALETTE.coreGlow
-  if (p === 3) return AMBIENT_PALETTE.emberSoft
-  return AMBIENT_PALETTE.textDim
+  if (p === 1) return { label: 'P1', color: '#ffd9d9', bg: 'rgba(232,90,90,0.22)' }
+  if (p === 2) return { label: 'P2', color: '#ffe7c2', bg: 'rgba(240,168,71,0.22)' }
+  if (p === 3) return { label: 'P3', color: '#cdf6ee', bg: 'rgba(90,217,200,0.18)' }
+  return { label: `P${p}`, color: AMBIENT_PALETTE.textDim, bg: 'rgba(120,130,148,0.14)' }
 }
 
 function sortRows(rows: StatusRow[]): StatusRow[] {
@@ -72,12 +49,8 @@ export function StatusThreads({ rows }: StatusThreadsProps) {
 
   return (
     <ul
-      className="ambient-status-threads flex flex-col"
-      style={{
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
-      }}
+      className="ambient-status-threads flex flex-col gap-2 px-4"
+      style={{ listStyle: 'none', margin: 0, padding: 0, paddingLeft: 16, paddingRight: 16 }}
     >
       {sorted.map((r, i) => (
         <StatusRowItem key={r.id ?? `${r.entity_type}-${i}`} row={r} />
@@ -87,72 +60,79 @@ export function StatusThreads({ rows }: StatusThreadsProps) {
 }
 
 function StatusRowItem({ row }: { row: StatusRow }) {
+  const [expanded, setExpanded] = useState(false)
   const chip = priorityChip(row.priority)
   const accent = actionByColor(row.next_action_by)
+  const hasDetail = !!(row.next_action || row.next_action_by || row.last_touched)
 
   return (
     <li
-      className="flex items-stretch gap-3 border-b px-4"
+      className="rounded-lg overflow-hidden"
       style={{
-        borderColor: 'rgba(255,255,255,0.05)',
-        minHeight: 52,
-        paddingTop: 8,
-        paddingBottom: 8,
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.07)',
       }}
     >
-      {/* left accent bar — who has the ball */}
-      <div
-        aria-hidden
-        style={{
-          width: 3,
-          flexShrink: 0,
-          background: accent,
-          borderRadius: 2,
-          alignSelf: 'stretch',
-        }}
-      />
-
-      {/* center: name + next_action */}
-      <div className="flex min-w-0 flex-1 flex-col justify-center">
-        <div
-          className="truncate text-[15px] leading-tight"
-          style={{
-            color: nameColor(row.priority),
-            fontFamily: "'Inter', system-ui, sans-serif",
-          }}
-        >
-          {row.name}
-        </div>
-        {row.next_action ? (
-          <div
-            className="truncate text-[13px] leading-tight"
-            style={{
-              color: AMBIENT_PALETTE.textDim,
-              marginTop: 2,
-            }}
-          >
-            {row.next_action}
-          </div>
-        ) : null}
-      </div>
-
-      {/* right: priority + action_by */}
-      <div className="flex flex-shrink-0 flex-col items-end justify-center gap-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+        style={{ cursor: hasDetail ? 'pointer' : 'default', background: 'transparent', border: 'none' }}
+        aria-expanded={expanded}
+      >
+        {/* Left accent bar */}
         <span
-          className="rounded-sm px-1.5 py-0.5 text-[10px] font-medium"
+          aria-hidden
+          style={{
+            width: 3,
+            height: 18,
+            flexShrink: 0,
+            background: accent,
+            borderRadius: 2,
+          }}
+        />
+
+        {/* Priority chip */}
+        <span
+          className="flex-shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium"
           style={{
             background: chip.bg,
             color: chip.color,
             letterSpacing: '0.06em',
             fontFamily: "'JetBrains Mono', ui-monospace, monospace",
           }}
-          aria-label={`priority ${chip.label}`}
         >
           {chip.label}
         </span>
-        {row.next_action_by ? (
+
+        {/* Name */}
+        <span
+          className="flex-1 min-w-0 text-[14px] leading-tight"
+          style={{
+            color: AMBIENT_PALETTE.text,
+            fontFamily: "'Inter', system-ui, sans-serif",
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: expanded ? 'normal' : 'nowrap',
+          }}
+        >
+          {row.name}
+        </span>
+
+        {/* Next action preview in collapsed state */}
+        {!expanded && row.next_action && (
           <span
-            className="text-[9px] uppercase"
+            className="hidden sm:block flex-shrink truncate text-[12px] max-w-[200px]"
+            style={{ color: AMBIENT_PALETTE.textDim }}
+          >
+            {row.next_action}
+          </span>
+        )}
+
+        {/* Action-by badge */}
+        {row.next_action_by && (
+          <span
+            className="flex-shrink-0 text-[9px] uppercase"
             style={{
               color: accent,
               letterSpacing: '0.18em',
@@ -161,8 +141,72 @@ function StatusRowItem({ row }: { row: StatusRow }) {
           >
             {row.next_action_by}
           </span>
-        ) : null}
-      </div>
+        )}
+
+        {/* Expand chevron */}
+        {hasDetail && (
+          <span
+            aria-hidden
+            style={{
+              fontSize: 10,
+              color: AMBIENT_PALETTE.textDim,
+              opacity: 0.5,
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 180ms ease',
+              display: 'inline-block',
+              flexShrink: 0,
+            }}
+          >
+            ▾
+          </span>
+        )}
+      </button>
+
+      {/* Expanded detail */}
+      {expanded && hasDetail && (
+        <div
+          className="px-4 pb-4 flex flex-col gap-2"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
+        >
+          {row.next_action && (
+            <div className="pt-3">
+              <div
+                className="text-[10px] uppercase mb-1"
+                style={{
+                  color: AMBIENT_PALETTE.textDim,
+                  letterSpacing: '0.18em',
+                  fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                  opacity: 0.6,
+                }}
+              >
+                next action
+              </div>
+              <p
+                className="text-[13.5px] leading-relaxed"
+                style={{
+                  color: AMBIENT_PALETTE.text,
+                  fontFamily: "'Inter', system-ui, sans-serif",
+                }}
+              >
+                {row.next_action}
+              </p>
+            </div>
+          )}
+
+          {row.last_touched && (
+            <div
+              className="text-[10px]"
+              style={{
+                color: AMBIENT_PALETTE.textDim,
+                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                opacity: 0.55,
+              }}
+            >
+              last touched {new Date(row.last_touched).toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
     </li>
   )
 }
