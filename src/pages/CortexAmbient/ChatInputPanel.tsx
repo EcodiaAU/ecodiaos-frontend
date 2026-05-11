@@ -1,34 +1,38 @@
 /**
  * ChatInputPanel - the focused input panel for typing to the OS.
  *
+ * Round-5 (fork_mp1sxm2q_898560) — voice integration:
+ *   Added MicButton + RecordingBanner inline so Tate can record directly
+ *   from the conductor chat without navigating to /voice. Uses the new
+ *   useVoiceRecorder() hook (src/hooks/useVoiceRecorder.ts) which shares
+ *   the chunk-upload + MediaRecorder logic with the /voice page. Tap-toggle
+ *   UX: tap mic to start, tap again (or the inline stop button) to stop.
+ *   Backend voiceBuffer drains transcriptions into chat automatically — no
+ *   addUserMessage() call needed here.
+ *   Visual states: idle (ember mic icon) / recording (pulsing red, banner)
+ *   / stopping (dimmed, "processing…") / error (red inline toast).
+ *
  * Round-3 bugfix, 2026-05-08, fork_mowu9a3g_f34229:
- *   - Bug 1 (400 "message is required"): the previous round was hand-rolling
- *     `api.post('/os-session/message', { content, priority })`, but the
- *     backend route at src/routes/osSession.js line 30 reads `req.body.message`
- *     and 400s when missing. Switched to the canonical `sendOSMessage()` from
- *     `@/api/osSession` which posts `{ message, mode }` and matches the shape
- *     CCStream uses. Also calls `addUserMessage(text)` first so the user
- *     bubble lands in the chat log immediately (matches CCStream pattern at
- *     line 2182). Without that the message disappeared from the input but
- *     never showed up as a user bubble.
- *   - Bug 3 (textarea doesn't auto-grow): the height was pinned by `rows={1}`
- *     and never re-measured. Added a useLayoutEffect that resets height to
- *     auto then to scrollHeight on every value change, capped at 30vh so
- *     long messages scroll inside the textarea instead of pushing the
- *     surrounding chat off-screen.
+ *   - Bug 1 (400 "message is required"): switched to canonical sendOSMessage()
+ *     which posts { message, mode } matching the backend shape.
+ *   - Bug 3 (textarea doesn't auto-grow): useLayoutEffect reset height to
+ *     auto → scrollHeight on every value change, capped at 30vh.
  *
  * Round-2 polish, 2026-05-08, fork_mowe5tuh_f2ddd3:
- *   - Real submit button (arrow-in-disc) instead of a tiny "send" text link.
+ *   - Real submit button (arrow-in-disc).
  *   - Live "thinking" hairline under the input while OS is streaming.
- *   - Cmd+K affordance is always visible until first focus, then collapses.
- *   - Enter-glyph shown next to send button so the keyboard convention is
- *     readable at a glance.
+ *   - Cmd+K affordance.
  *
  * Bottom-anchored, narrow, glassy. Posts to /api/os-session/message.
  */
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { sendOSMessage, abortOS, uploadAttachment } from '@/api/osSession'
 import { useOSSessionStore } from '@/store/osSessionStore'
+import { useVoiceRecorder } from '@/hooks/useVoiceRecorder'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface UploadedAttachment {
   url: string
@@ -47,6 +51,10 @@ interface PendingAttachment {
   error?: string
   result?: UploadedAttachment
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,6 +83,12 @@ function buildEnrichedMessage(text: string, attachments: UploadedAttachment[]): 
   return `${text}\n\n${blocks.join('\n\n')}`.trim()
 }
 
+function formatElapsed(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 const PLACEHOLDERS = [
   'speak to ecodiaos',
   'what now',
@@ -82,6 +96,10 @@ const PLACEHOLDERS = [
   'tell it',
   'direct',
 ]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function ChatInputPanel() {
   const [value, setValue] = useState('')
@@ -96,6 +114,14 @@ export function ChatInputPanel() {
   const isStreaming = useOSSessionStore((s) => s.status === 'streaming')
   const addUserMessage = useOSSessionStore((s) => s.addUserMessage)
 
+  // ── Voice recorder ──────────────────────────────────────────────────────────
+  const voiceRecorder = useVoiceRecorder()
+  const { startRecording, stopRecording } = voiceRecorder
+
+  const isRecording = voiceRecorder.state === 'recording'
+  const isStopping = voiceRecorder.state === 'stopping'
+
+  // ── Abort ───────────────────────────────────────────────────────────────────
   const onAbort = async () => {
     if (aborting) return
     setAborting(true)
@@ -103,7 +129,7 @@ export function ChatInputPanel() {
     finally { setAborting(false) }
   }
 
-  // Slow placeholder rotation for life
+  // Slow placeholder rotation
   useEffect(() => {
     const t = window.setInterval(() => {
       setPlaceholderIdx((i) => (i + 1) % PLACEHOLDERS.length)
@@ -123,10 +149,7 @@ export function ChatInputPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Auto-grow the textarea to fit content. useLayoutEffect (not useEffect) so
-  // the resize lands in the same paint as the keystroke - prevents one-frame
-  // flash where the textarea is at the old height before growing.
-  // Capped at 30vh; beyond that the textarea scrolls internally.
+  // Auto-grow textarea
   useLayoutEffect(() => {
     const el = inputRef.current
     if (!el) return
@@ -169,7 +192,6 @@ export function ChatInputPanel() {
     const list = Array.from(files)
     if (fileInputRef.current) fileInputRef.current.value = ''
     for (const f of list) {
-      // Fire-and-forget; uploads run in parallel.
       void uploadOne(f)
     }
   }
@@ -195,7 +217,7 @@ export function ChatInputPanel() {
     addUserMessage(enriched)
     try {
       await sendOSMessage(enriched, 'direct')
-    } catch (err) {
+    } catch {
       setValue(text)
     } finally {
       setSending(false)
@@ -205,15 +227,11 @@ export function ChatInputPanel() {
   const canSubmit =
     !sending && !uploadsInFlight && (value.trim().length > 0 || attachments.some((a) => a.status === 'done'))
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <form
-      onSubmit={onSubmit}
+    <div
       className="ambient-input w-full px-4 pb-2 pt-2"
       style={{
-        // Round-4 (fork_moxykr7k_4cb6b2): sticky positioning lifted to the
-        // parent ambient-bottom-stack wrapper in index.tsx so input + the
-        // new StripRow share a single sticky context. Position here is just
-        // relative-in-flow inside that wrapper.
         position: 'relative',
         zIndex: 20,
         background:
@@ -221,79 +239,372 @@ export function ChatInputPanel() {
       }}
     >
       <div className="mx-auto max-w-5xl">
-        <div className="relative rounded-md overflow-hidden"
-          style={{
-            background: 'linear-gradient(180deg, rgba(15,18,24,0.55) 0%, rgba(8,10,14,0.78) 100%)',
-            border: '1px solid rgba(255,178,122,0.22)',
-            boxShadow: isStreaming
-              ? '0 0 32px rgba(255,178,122,0.18), inset 0 0 18px rgba(255,178,122,0.08)'
-              : '0 0 28px rgba(255,178,122,0.06), inset 0 0 14px rgba(255,178,122,0.04)',
-            backdropFilter: 'blur(18px) saturate(1.2)',
-            WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
-            transition: 'box-shadow 320ms ease-out',
-          }}
-        >
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-              {attachments.map((a) => (
-                <AttachmentChip
-                  key={a.localId}
-                  attachment={a}
-                  onRemove={() => removeAttachment(a.localId)}
-                />
-              ))}
-            </div>
-          )}
 
-          <div className="flex items-end gap-2 px-3 py-2.5">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => onFilesSelected(e.target.files)}
-            />
-            <AttachButton
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending}
-            />
-            <textarea
-              ref={inputRef}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onFocus={() => setHasFocused(true)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  onSubmit()
+        {/* ── Recording Banner ── visible while mic is active ── */}
+        <RecordingBanner
+          state={voiceRecorder.state}
+          elapsed={voiceRecorder.elapsedSeconds}
+          lastTranscript={voiceRecorder.lastTranscript}
+          audioLevel={voiceRecorder.audioLevel}
+          error={voiceRecorder.error}
+          onStop={stopRecording}
+        />
+
+        {/* ── Input form ── */}
+        <form
+          onSubmit={onSubmit}
+          style={{ position: 'relative' }}
+        >
+          <div className="relative rounded-md overflow-hidden"
+            style={{
+              background: 'linear-gradient(180deg, rgba(15,18,24,0.55) 0%, rgba(8,10,14,0.78) 100%)',
+              border: '1px solid rgba(255,178,122,0.22)',
+              boxShadow: isStreaming
+                ? '0 0 32px rgba(255,178,122,0.18), inset 0 0 18px rgba(255,178,122,0.08)'
+                : isRecording
+                  ? '0 0 32px rgba(239,68,68,0.14), inset 0 0 18px rgba(239,68,68,0.06)'
+                  : '0 0 28px rgba(255,178,122,0.06), inset 0 0 14px rgba(255,178,122,0.04)',
+              backdropFilter: 'blur(18px) saturate(1.2)',
+              WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
+              transition: 'box-shadow 320ms ease-out',
+            }}
+          >
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                {attachments.map((a) => (
+                  <AttachmentChip
+                    key={a.localId}
+                    attachment={a}
+                    onRemove={() => removeAttachment(a.localId)}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-end gap-2 px-3 py-2.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => onFilesSelected(e.target.files)}
+              />
+              <AttachButton
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending}
+              />
+              <textarea
+                ref={inputRef}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onFocus={() => setHasFocused(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    onSubmit()
+                  }
+                }}
+                placeholder={
+                  isRecording
+                    ? 'recording voice…'
+                    : isStopping
+                      ? 'processing…'
+                      : PLACEHOLDERS[placeholderIdx]
                 }
-              }}
-              placeholder={PLACEHOLDERS[placeholderIdx]}
-              rows={1}
-              className="flex-1 resize-none bg-transparent text-[14px] text-white placeholder:text-white/30 focus:outline-none"
-              style={{ minHeight: '24px', maxHeight: '30vh', lineHeight: '1.45' }}
-              disabled={sending}
-            />
-            {isStreaming && <StopButton aborting={aborting} onAbort={onAbort} />}
-            <SubmitButton sending={sending} canSubmit={canSubmit} />
+                rows={1}
+                className="flex-1 resize-none bg-transparent text-[14px] text-white placeholder:text-white/30 focus:outline-none"
+                style={{ minHeight: '24px', maxHeight: '30vh', lineHeight: '1.45' }}
+                disabled={sending}
+              />
+              {isStreaming && <StopButton aborting={aborting} onAbort={onAbort} />}
+              <SubmitButton sending={sending} canSubmit={canSubmit} />
+              {/* Mic button — tap to record, tap again to stop */}
+              <MicButton
+                state={voiceRecorder.state}
+                onStart={startRecording}
+                onStop={stopRecording}
+                disabled={sending}
+              />
+            </div>
+
+            {/* Streaming hairline */}
+            <StreamingRibbon active={isStreaming} />
+            {/* Recording hairline — red when mic is hot */}
+            <RecordingRibbon active={isRecording} />
           </div>
 
-          {/* Streaming hairline - subtle ember ribbon under the input while
-              the OS is generating a reply. Visceral feedback the OS is alive. */}
-          <StreamingRibbon active={isStreaming} />
-        </div>
-
-        {/* Affordance row. Cmd+K hint hides after first focus to reduce noise. */}
-        <div className="mt-1.5 flex items-center justify-between px-1 text-[9px] uppercase tracking-[0.2em] text-white/25 select-none">
-          <span style={{ opacity: hasFocused ? 0.55 : 1, transition: 'opacity 360ms ease-out' }}>
-            <Kbd>⌘K</Kbd> focus &middot; <Kbd>↵</Kbd> send &middot; <Kbd>⇧↵</Kbd> newline
-          </span>
-          <span><Kbd>⌃ .</Kbd> audio</span>
-        </div>
+          {/* Affordance row */}
+          <div className="mt-1.5 flex items-center justify-between px-1 text-[9px] uppercase tracking-[0.2em] text-white/25 select-none">
+            <span style={{ opacity: hasFocused ? 0.55 : 1, transition: 'opacity 360ms ease-out' }}>
+              <Kbd>⌘K</Kbd> focus &middot; <Kbd>↵</Kbd> send &middot; <Kbd>⇧↵</Kbd> newline
+            </span>
+            <span><Kbd>⌃ .</Kbd> audio</span>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recording Banner
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RecordingBannerProps {
+  state: 'idle' | 'recording' | 'stopping' | 'error'
+  elapsed: number
+  lastTranscript: string
+  audioLevel: number
+  error: string | null
+  onStop: () => void
+}
+
+function RecordingBanner({ state, elapsed, lastTranscript, audioLevel, error, onStop }: RecordingBannerProps) {
+  const visible = state === 'recording' || state === 'stopping'
+  if (!visible) return null
+
+  const levelPct = Math.min(100, Math.round(audioLevel * 220))
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 12px 6px 10px',
+        marginBottom: 4,
+        borderRadius: 6,
+        background: 'linear-gradient(90deg, rgba(239,68,68,0.10) 0%, rgba(10,12,18,0.80) 100%)',
+        border: '1px solid rgba(239,68,68,0.22)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        overflow: 'hidden',
+      }}
+      role="status"
+      aria-label={`Recording: ${formatElapsed(elapsed)}`}
+    >
+      {/* Pulsing red dot */}
+      <span
+        aria-hidden
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          background: '#ef4444',
+          boxShadow: '0 0 6px rgba(239,68,68,0.8)',
+          flexShrink: 0,
+          animation: state === 'recording' ? 'ambient-pulse 1.4s ease-in-out infinite' : 'none',
+          opacity: state === 'stopping' ? 0.45 : 1,
+        }}
+      />
+
+      {/* Elapsed time */}
+      <span
+        style={{
+          color: state === 'stopping' ? 'rgba(248,113,113,0.55)' : '#f87171',
+          fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+          fontSize: 11,
+          flexShrink: 0,
+          letterSpacing: '0.04em',
+        }}
+      >
+        {formatElapsed(elapsed)}
+      </span>
+
+      {/* Last transcript preview */}
+      <span
+        style={{
+          color: 'rgba(255,255,255,0.60)',
+          fontSize: 12,
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}
+      >
+        {state === 'stopping'
+          ? 'processing…'
+          : error
+            ? <span style={{ color: '#f87171' }}>⚠ {error}</span>
+            : lastTranscript || 'listening…'
+        }
+      </span>
+
+      {/* Audio level mini-bar */}
+      {state === 'recording' && (
+        <div
+          aria-hidden
+          style={{
+            width: 36,
+            height: 3,
+            background: 'rgba(255,255,255,0.10)',
+            borderRadius: 2,
+            flexShrink: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${levelPct}%`,
+              background: 'linear-gradient(90deg, #ef4444, #f87171)',
+              borderRadius: 2,
+              transition: 'width 60ms linear',
+            }}
+          />
+        </div>
+      )}
+
+      {/* Stop button */}
+      {state === 'recording' && (
+        <button
+          type="button"
+          onClick={onStop}
+          aria-label="stop recording"
+          title="stop recording"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 4,
+            border: '1px solid rgba(239,68,68,0.45)',
+            background: 'rgba(239,68,68,0.12)',
+            color: '#f87171',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            cursor: 'pointer',
+            transition: 'all 160ms ease-out',
+          }}
+        >
+          <svg viewBox="0 0 10 10" width="8" height="8" fill="currentColor">
+            <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mic Button
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MicButtonProps {
+  state: 'idle' | 'recording' | 'stopping' | 'error'
+  onStart: () => Promise<void>
+  onStop: () => void
+  disabled?: boolean
+}
+
+function MicButton({ state, onStart, onStop, disabled }: MicButtonProps) {
+  const isRecording = state === 'recording'
+  const isStopping = state === 'stopping'
+  const isError = state === 'error'
+  const isActive = isRecording || isStopping
+
+  const handleClick = () => {
+    if (disabled || isStopping) return
+    if (isRecording) {
+      onStop()
+    } else {
+      onStart()
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled || isStopping}
+      aria-label={isRecording ? 'Stop recording' : 'Start voice recording'}
+      title={isRecording ? 'Stop recording' : 'Record voice'}
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 999,
+        border: isActive
+          ? '1px solid rgba(239,68,68,0.60)'
+          : isError
+            ? '1px solid rgba(239,68,68,0.40)'
+            : '1px solid rgba(255,255,255,0.10)',
+        background: isActive
+          ? 'radial-gradient(circle at 50% 40%, rgba(239,68,68,0.30) 0%, rgba(239,68,68,0.04) 70%)'
+          : 'transparent',
+        color: isActive
+          ? '#f87171'
+          : isError
+            ? 'rgba(239,68,68,0.70)'
+            : 'rgba(255,178,122,0.70)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        cursor: disabled || isStopping ? 'default' : 'pointer',
+        transition: 'all 200ms ease-out',
+        boxShadow: isActive ? '0 0 10px rgba(239,68,68,0.20)' : 'none',
+        animation: isRecording ? 'mic-glow 2s ease-in-out infinite' : 'none',
+        opacity: isStopping ? 0.50 : 1,
+      }}
+    >
+      {isStopping ? (
+        <SpinnerGlyph color="rgba(248,113,113,0.60)" />
+      ) : isRecording ? (
+        /* Solid mic = recording state */
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+          <rect x="5.5" y="2" width="5" height="8" rx="2.5" />
+          <path
+            d="M3 8a5 5 0 0 0 10 0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
+          <line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          <line x1="5.5" y1="15" x2="10.5" y2="15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      ) : (
+        /* Outline mic = idle state */
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+          strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="5.5" y="2" width="5" height="8" rx="2.5" />
+          <path d="M3 8a5 5 0 0 0 10 0" />
+          <line x1="8" y1="13" x2="8" y2="15" />
+          <line x1="5.5" y1="15" x2="10.5" y2="15" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recording ribbon (red hairline under input when mic is hot)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function RecordingRibbon({ active }: { active: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-px overflow-hidden"
+      style={{ opacity: active ? 1 : 0, transition: 'opacity 240ms ease-out' }}
+    >
+      <div
+        style={{
+          height: '1px',
+          width: '40%',
+          background: 'linear-gradient(90deg, rgba(239,68,68,0) 0%, rgba(239,68,68,0.90) 50%, rgba(239,68,68,0) 100%)',
+          animation: 'ambient-ribbon 2.0s linear infinite',
+          boxShadow: '0 0 6px rgba(239,68,68,0.65)',
+        }}
+      />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Existing sub-components (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 
 function StopButton({ aborting, onAbort }: { aborting: boolean; onAbort: () => void }) {
   return (
@@ -352,11 +663,7 @@ function SubmitButton({ sending, canSubmit }: { sending: boolean; canSubmit: boo
         boxShadow: canSubmit ? '0 0 10px rgba(255,178,122,0.22)' : 'none',
       }}
     >
-      {sending ? (
-        <SpinnerGlyph />
-      ) : (
-        <ArrowGlyph />
-      )}
+      {sending ? <SpinnerGlyph /> : <ArrowGlyph />}
     </button>
   )
 }
@@ -371,9 +678,10 @@ function ArrowGlyph() {
   )
 }
 
-function SpinnerGlyph() {
+function SpinnerGlyph({ color }: { color?: string } = {}) {
   return (
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+      stroke={color ?? 'currentColor'}
       strokeWidth="1.6" strokeLinecap="round"
       style={{ animation: 'ambient-spin 0.9s linear infinite' }}>
       <circle cx="8" cy="8" r="5.4" opacity="0.25" />

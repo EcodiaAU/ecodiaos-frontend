@@ -182,6 +182,10 @@ export default function CortexAmbientPage() {
           0%   { transform: translateX(-100%); }
           100% { transform: translateX(250%); }
         }
+        @keyframes mic-glow {
+          0%, 100% { box-shadow: 0 0 6px rgba(239,68,68,0.20); }
+          50%      { box-shadow: 0 0 18px rgba(239,68,68,0.50); }
+        }
         .ambient-chatlog-scroll::-webkit-scrollbar { width: 6px; }
         .ambient-chatlog-scroll::-webkit-scrollbar-track { background: transparent; }
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb {
