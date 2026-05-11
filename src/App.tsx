@@ -6,6 +6,7 @@ import { SceneErrorBoundary } from './components/shared/SceneErrorBoundary'
 
 const CortexAmbientPage = lazy(() => import('./pages/CortexAmbient'))
 const LoginPage = lazy(() => import('./pages/Login'))
+const VoicePage = lazy(() => import('./pages/Voice'))
 
 function SceneSuspense({ children }: { children: React.ReactNode }) {
   return (
@@ -35,6 +36,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<SceneSuspense><LoginPage /></SceneSuspense>} />
+        <Route path="/voice" element={<SceneSuspense><VoicePage /></SceneSuspense>} />
         <Route
           element={
             <ProtectedRoute>
