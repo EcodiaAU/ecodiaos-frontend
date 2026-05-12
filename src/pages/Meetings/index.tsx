@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import {
   listMeetings, getMeeting, createMeeting, uploadChunk, stopMeeting,
-  retranscribeMeeting, updateSpeakers, deleteMeeting, getExportUrl,
+  retranscribeMeeting, updateSpeakers, reanalyseMeeting, deleteMeeting, getExportUrl,
   uploadMeetingFile, emailMeetingAnalysis, getMeetingEmailSends,
   type Meeting, type TranscriptSegment, type AnalysisData, type ActionItem, type EmailSend,
 } from '@/api/meetings'
@@ -771,6 +771,11 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['meeting', meetingId] }),
   })
 
+  const reanalyseMutation = useMutation({
+    mutationFn: () => reanalyseMeeting(meetingId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['meeting', meetingId] }),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteMeeting(meetingId),
     onSuccess: () => {
@@ -929,20 +934,38 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
         />
       )}
 
-      {/* Email analysis button - visible when analysis is ready */}
+      {/* Analysis action buttons - visible when analysis is ready */}
       {meeting.analysis_status === 'done' && meeting.analysis_json && (
-        <button
-          onClick={() => openEmailModal(meeting)}
-          className="flex items-center gap-2 self-start rounded-lg px-3 py-2 text-xs transition-colors"
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: '#999',
-          }}
-        >
-          <Mail className="h-3.5 w-3.5" />
-          Email this analysis
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => openEmailModal(meeting)}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: '#999',
+            }}
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Email this analysis
+          </button>
+          {Object.keys(meeting.speaker_names || {}).length > 0 && (
+            <button
+              onClick={() => reanalyseMutation.mutate()}
+              disabled={reanalyseMutation.isPending}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors disabled:opacity-50"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#999',
+              }}
+              title="Re-run analysis with the current speaker names so owners reflect who actually said what"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${reanalyseMutation.isPending ? 'animate-spin' : ''}`} />
+              {reanalyseMutation.isPending ? 'Queuing...' : 'Re-run analysis with current speaker names'}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Email modal */}

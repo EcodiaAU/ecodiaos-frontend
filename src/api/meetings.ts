@@ -165,6 +165,14 @@ export async function updateSpeakers(meetingId: string, speakers: Record<string,
   return res.data
 }
 
+export async function reanalyseMeeting(meetingId: string) {
+  const res = await api.post<{ queued: boolean; meeting_id: string }>(
+    `/meetings/${meetingId}/analyze`,
+    { force: true },
+  )
+  return res.data
+}
+
 export async function updateTranscript(meetingId: string, transcriptText: string) {
   const res = await api.patch<{ transcript_text: string }>(
     `/meetings/${meetingId}/transcript`,
