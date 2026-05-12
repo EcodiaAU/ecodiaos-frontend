@@ -567,18 +567,29 @@ function SpeakerLabel({
   const color = speakerColor(code)
 
   if (editing) {
+    const save = () => { if (draft.trim()) onRename(code, draft.trim()); setEditing(false) }
     return (
       <form
-        onSubmit={e => { e.preventDefault(); if (draft.trim()) onRename(code, draft.trim()); setEditing(false) }}
+        onSubmit={e => { e.preventDefault(); save() }}
         className="inline-flex items-center gap-1"
       >
         <input
           value={draft} onChange={e => setDraft(e.target.value)} autoFocus
           className="w-28 rounded bg-surface-container-high px-2 py-0.5 text-xs text-on-surface outline-none"
-          onBlur={() => setEditing(false)} maxLength={40}
+          onKeyDown={e => { if (e.key === 'Escape') setEditing(false) }}
+          maxLength={40}
         />
-        <button type="submit" className="text-primary-container"><Check className="h-3 w-3" /></button>
-        <button type="button" onClick={() => setEditing(false)} className="text-on-surface-muted"><X className="h-3 w-3" /></button>
+        <button
+          type="submit"
+          onMouseDown={e => e.preventDefault()}
+          className="text-primary-container"
+        ><Check className="h-3 w-3" /></button>
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => setEditing(false)}
+          className="text-on-surface-muted"
+        ><X className="h-3 w-3" /></button>
       </form>
     )
   }
