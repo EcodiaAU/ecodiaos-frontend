@@ -17,6 +17,7 @@ type TranscriptionStatus =
   | 'done'
   | 'error'
   | 'uploaded_awaiting_transcription'
+  | 'retrying'
 
 interface MeetingRow {
   id: string
@@ -60,6 +61,7 @@ const STATUS_CHIP: Record<TranscriptionStatus, { label: string; className: strin
   pending: { label: 'Pending', className: 'bg-yellow-500/20 text-yellow-300' },
   processing: { label: 'Processing', className: 'bg-blue-500/20 text-blue-300' },
   uploaded_awaiting_transcription: { label: 'Uploaded', className: 'bg-blue-500/20 text-blue-300' },
+  retrying: { label: 'Retrying', className: 'bg-blue-500/20 text-blue-300' },
   done: { label: 'Done', className: 'bg-emerald-500/20 text-emerald-300' },
   error: { label: 'Error', className: 'bg-red-500/20 text-red-300' },
 }
@@ -69,6 +71,8 @@ export default function MeetingsListPage() {
   const [meetings, setMeetings] = useState<MeetingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Per-row retry loading state: meetingId -> true while queuing
+  const [retrying, setRetrying] = useState<Record<string, boolean>>({})
 
   const authHeaders = (): Record<string, string> =>
     token ? { Authorization: `Bearer ${token}` } : {}
@@ -85,6 +89,28 @@ export default function MeetingsListPage() {
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const handleRetry = async (e: React.MouseEvent, meetingId: string) => {
+    e.preventDefault() // Don't navigate to detail page
+    e.stopPropagation()
+    setRetrying(prev => ({ ...prev, [meetingId]: true }))
+    try {
+      const res = await fetch(`${API_BASE}/meetings/${meetingId}/retranscribe`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      if (res.ok) {
+        // Optimistically update the row status so the chip flips to Retrying
+        setMeetings(prev =>
+          prev.map(m => m.id === meetingId ? { ...m, transcription_status: 'retrying' } : m)
+        )
+      }
+    } catch {
+      // Ignore - user can click through to detail page for full error
+    } finally {
+      setRetrying(prev => ({ ...prev, [meetingId]: false }))
+    }
+  }
 
   return (
     <div className="min-h-screen w-full bg-black text-white">
@@ -155,14 +181,25 @@ export default function MeetingsListPage() {
                         )}
                       </div>
                     </div>
-                    <span
-                      className={[
-                        'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium',
-                        chip.className,
-                      ].join(' ')}
-                    >
-                      {chip.label}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {m.transcription_status === 'error' && (
+                        <button
+                          onClick={(e) => handleRetry(e, m.id)}
+                          disabled={retrying[m.id]}
+                          className="rounded-lg bg-white/8 px-2.5 py-1 text-[11px] text-white/50 hover:bg-white/15 hover:text-white/80 transition-colors disabled:opacity-40"
+                        >
+                          {retrying[m.id] ? '...' : 'Retry'}
+                        </button>
+                      )}
+                      <span
+                        className={[
+                          'rounded-full px-2.5 py-1 text-[11px] font-medium',
+                          chip.className,
+                        ].join(' ')}
+                      >
+                        {chip.label}
+                      </span>
+                    </div>
                   </Link>
                 </li>
               )
