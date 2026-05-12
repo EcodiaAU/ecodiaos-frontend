@@ -8,13 +8,13 @@
  * Origin: fork_mp1ym10n_303c2a, 2026-05-12
  */
 import {
-  useState, useEffect, useCallback, useRef, useMemo, Fragment,
+  useState, useEffect, useCallback, useRef, useMemo,
 } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatDistanceToNow, isAfter, subDays } from 'date-fns'
 import toast from 'react-hot-toast'
 import {
-  Archive, Plus, Search, X, RefreshCw, Filter,
+  Archive, Plus, Search, X, RefreshCw,
   User, Layers, MessageSquare, CheckSquare, TrendingUp,
   Heart, Scale, Server, ChevronDown, CheckCheck, Tag,
   Clock, ArrowUpDown,
@@ -391,7 +391,7 @@ function NewRowModal({ onClose, onCreated }: {
 // ── Mobile card ──────────────────────────────────────────────────────────
 
 function MobileCard({
-  row, selected, onSelect, onUpdate, onArchive,
+  row, selected, onSelect, onUpdate: _onUpdate, onArchive,
 }: {
   row: StatusRow
   selected: boolean
@@ -639,7 +639,7 @@ export default function StatusBoardPage() {
     setFilterPriority(s => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n })
   const toggleNabFilter = (v: string) =>
     setFilterNab(s => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n })
-  const toggleTypeFilter = (v: string) =>
+  const _toggleTypeFilter = (v: string) =>
     setFilterType(s => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n })
 
   const toggleSelect = useCallback((id: string, v: boolean) =>
