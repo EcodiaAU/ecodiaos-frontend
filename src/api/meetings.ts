@@ -118,6 +118,30 @@ export async function uploadChunk(meetingId: string, chunkIndex: number, blob: B
   return res.data
 }
 
+/**
+ * Upload a local audio file to attach to an EXISTING meeting (rescue path for lost live captures).
+ * Fires the transcription pipeline once uploaded.
+ */
+export async function uploadAudio(
+  meetingId: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<{ ok: boolean; transcription_status: string }> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const res = await api.post<{ ok: boolean; transcription_status: string }>(
+    `/meetings/${meetingId}/upload-audio`,
+    form,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: onProgress
+        ? (e) => { if (e.total) onProgress(Math.round((e.loaded / e.total) * 100)) }
+        : undefined,
+    },
+  )
+  return res.data
+}
+
 export async function stopMeeting(meetingId: string, durationSeconds?: number) {
   const res = await api.post<{ ok: boolean; transcription_status: string; idempotent?: boolean }>(
     `/meetings/${meetingId}/stop`,
