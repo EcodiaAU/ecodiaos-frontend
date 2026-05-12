@@ -406,9 +406,12 @@ function PriorityBadge({ p }: { p: 'P1' | 'P2' | 'P3' }) {
 
 function AnalysisView({ analysis, actionItems }: { analysis: AnalysisData; actionItems: ActionItem[] }) {
   const [section, setSection] = useState<'summary' | 'actions' | 'decisions'>('summary')
-  const p1 = actionItems.filter(a => a.priority === 'P1')
-  const p2 = actionItems.filter(a => a.priority === 'P2')
-  const p3 = actionItems.filter(a => a.priority === 'P3')
+  // Guard: action_items_json was historically stored double-encoded (JSONB string, not array).
+  // DB rows are now repaired but guard defensively in case of any future edge case.
+  const safeItems = Array.isArray(actionItems) ? actionItems : []
+  const p1 = safeItems.filter(a => a.priority === 'P1')
+  const p2 = safeItems.filter(a => a.priority === 'P2')
+  const p3 = safeItems.filter(a => a.priority === 'P3')
   const orderedItems = [...p1, ...p2, ...p3]
 
   return (
@@ -447,7 +450,7 @@ function AnalysisView({ analysis, actionItems }: { analysis: AnalysisData; actio
       {/* Deep dive: exec summary + risks */}
       {section === 'summary' && (
         <div className="flex flex-col gap-3">
-          {analysis.executive_summary
+          {(analysis.executive_summary || '')
             .split(/\n\n+/)
             .filter(Boolean)
             .map((p, i) => (
@@ -629,12 +632,14 @@ const TranscriptView = memo(function TranscriptView({
         </a>
       </div>
 
-      {transcript && !transcript.diarised && (
+      {meeting.transcription_status === 'done' && !meeting.transcript_diarised && (
         <div
           className="rounded-lg px-3 py-2 text-xs text-tertiary-container"
           style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.2)' }}
         >
-          Speaker separation requires Deepgram — provision <code className="text-tertiary-container">DEEPGRAM_API_KEY</code> to enable.
+          {meeting.transcript_engine === 'deepgram'
+            ? 'Deepgram ran but returned no speaker boundaries — likely a short or single-speaker recording.'
+            : 'Speaker separation requires Deepgram. This recording used Whisper as fallback.'}
         </div>
       )}
 
@@ -859,7 +864,7 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
       {meeting.transcription_status === 'done' && meeting.analysis_status === 'done' && meeting.analysis_json && (
         <AnalysisView
           analysis={meeting.analysis_json}
-          actionItems={meeting.action_items_json || []}
+          actionItems={Array.isArray(meeting.action_items_json) ? meeting.action_items_json : []}
         />
       )}
 
