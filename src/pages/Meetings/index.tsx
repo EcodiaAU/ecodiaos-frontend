@@ -25,13 +25,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Mic, MicOff, Square, Clock, FileText,
   Copy, Download, Check, AlertTriangle, RefreshCw,
-  Pencil, X, ChevronLeft, Trash2, Loader2, Upload,
+  Pencil, X, ChevronLeft, Trash2, Loader2, Upload, Mail, Send,
 } from 'lucide-react'
 import {
   listMeetings, getMeeting, createMeeting, uploadChunk, stopMeeting,
   retranscribeMeeting, updateSpeakers, deleteMeeting, getExportUrl,
-  uploadMeetingFile,
-  type Meeting, type TranscriptSegment, type AnalysisData, type ActionItem,
+  uploadMeetingFile, emailMeetingAnalysis, getMeetingEmailSends,
+  type Meeting, type TranscriptSegment, type AnalysisData, type ActionItem, type EmailSend,
 } from '@/api/meetings'
 
 // ─── Speaker colours ──────────────────────────────────────────────────────────
@@ -768,6 +768,56 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
     },
   })
 
+  // ── Email state ──────────────────────────────────────────────────────────────
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailNote, setEmailNote] = useState('')
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null)
+  const [emailSends, setEmailSends] = useState<EmailSend[]>([])
+  const [sendsLoaded, setSendsLoaded] = useState(false)
+
+  const openEmailModal = async (meeting: Meeting) => {
+    setEmailTo('')
+    setEmailSubject(`Meeting analysis: ${meeting.title || fmtDate(meeting.started_at)}`)
+    setEmailNote('')
+    setEmailError(null)
+    setEmailSuccess(null)
+    setEmailOpen(true)
+    // Load send history in the background
+    try {
+      const { sends } = await getMeetingEmailSends(meetingId)
+      setEmailSends(sends)
+      setSendsLoaded(true)
+    } catch { /* non-critical */ }
+  }
+
+  const handleSendEmail = async () => {
+    if (!emailTo.trim()) { setEmailError('Enter at least one recipient'); return }
+    setEmailSending(true)
+    setEmailError(null)
+    setEmailSuccess(null)
+    try {
+      const result = await emailMeetingAnalysis(meetingId, {
+        to: emailTo,
+        subject: emailSubject || undefined,
+        note: emailNote || undefined,
+      })
+      setEmailSuccess(`Sent to ${result.sent_to.join(', ')}`)
+      setEmailTo('')
+      setEmailNote('')
+      // Refresh send history
+      const { sends } = await getMeetingEmailSends(meetingId)
+      setEmailSends(sends)
+    } catch (e) {
+      setEmailError((e as Error).message || 'Send failed')
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   if (isLoading) return (
     <div className="flex items-center justify-center py-16">
       <Loader2 className="h-6 w-6 animate-spin text-on-surface-muted" />
@@ -866,6 +916,129 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
           analysis={meeting.analysis_json}
           actionItems={Array.isArray(meeting.action_items_json) ? meeting.action_items_json : []}
         />
+      )}
+
+      {/* Email analysis button - visible when analysis is ready */}
+      {meeting.analysis_status === 'done' && meeting.analysis_json && (
+        <button
+          onClick={() => openEmailModal(meeting)}
+          className="flex items-center gap-2 self-start rounded-lg px-3 py-2 text-xs transition-colors"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#999',
+          }}
+        >
+          <Mail className="h-3.5 w-3.5" />
+          Email this analysis
+        </button>
+      )}
+
+      {/* Email modal */}
+      {emailOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEmailOpen(false) }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-5 flex flex-col gap-4"
+            style={{ background: '#161616', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-primary-container" />
+                <span className="text-sm font-medium text-on-surface">Email analysis</span>
+              </div>
+              <button onClick={() => setEmailOpen(false)} className="text-on-surface-muted hover:text-on-surface">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* To field */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-on-surface-muted uppercase tracking-wider">To</label>
+              <input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="name@example.com (comma-separate for multiple)"
+                className="rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                autoFocus
+              />
+            </div>
+
+            {/* Subject field */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-on-surface-muted uppercase tracking-wider">Subject</label>
+              <input
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+              />
+            </div>
+
+            {/* Note field */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-on-surface-muted uppercase tracking-wider">Note <span className="normal-case opacity-50">(optional - prepended to email)</span></label>
+              <textarea
+                value={emailNote}
+                onChange={(e) => setEmailNote(e.target.value)}
+                rows={3}
+                placeholder="Add a note to the recipient..."
+                className="rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted outline-none resize-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+              />
+            </div>
+
+            {/* What's included note */}
+            <p className="text-xs text-on-surface-muted opacity-60">
+              Sends: summary, action items, decisions, deep dive. Transcript is not included.
+            </p>
+
+            {/* Error / success */}
+            {emailError && (
+              <div className="rounded-lg px-3 py-2 text-xs text-error" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)' }}>
+                {emailError}
+              </div>
+            )}
+            {emailSuccess && (
+              <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'rgba(46,204,113,0.08)', border: '1px solid rgba(46,204,113,0.2)', color: '#2ECC71' }}>
+                {emailSuccess}
+              </div>
+            )}
+
+            {/* Send button */}
+            <button
+              onClick={handleSendEmail}
+              disabled={emailSending || !emailTo.trim()}
+              className="flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition-colors disabled:opacity-40"
+              style={{ background: emailSending ? 'rgba(46,204,113,0.15)' : 'rgba(46,204,113,0.2)', color: '#2ECC71', border: '1px solid rgba(46,204,113,0.3)' }}
+            >
+              {emailSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {emailSending ? 'Sending...' : 'Send'}
+            </button>
+
+            {/* Send history */}
+            {sendsLoaded && emailSends.length > 0 && (
+              <div className="flex flex-col gap-1.5 pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <p className="text-xs text-on-surface-muted uppercase tracking-wider">Previously sent</p>
+                {emailSends.slice(0, 5).map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-xs text-on-surface-muted">
+                    <span className="truncate">{s.sent_to.join(', ')}</span>
+                    <span className="flex-shrink-0 ml-2 opacity-50">
+                      {new Date(s.sent_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Analysis error */}

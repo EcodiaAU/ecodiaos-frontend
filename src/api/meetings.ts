@@ -218,3 +218,29 @@ export async function uploadMeetingFile(
   )
   return res.data
 }
+
+export interface EmailSend {
+  id: string
+  sent_to: string[]
+  subject: string | null
+  resend_message_id: string | null
+  status: 'sent' | 'error'
+  error_text: string | null
+  sent_at: string
+}
+
+export async function emailMeetingAnalysis(
+  meetingId: string,
+  payload: { to: string; subject?: string; note?: string },
+): Promise<{ ok: boolean; message_id: string | null; sent_to: string[] }> {
+  const res = await api.post<{ ok: boolean; message_id: string | null; sent_to: string[] }>(
+    `/meetings/${meetingId}/email`,
+    payload,
+  )
+  return res.data
+}
+
+export async function getMeetingEmailSends(meetingId: string): Promise<{ sends: EmailSend[] }> {
+  const res = await api.get<{ sends: EmailSend[] }>(`/meetings/${meetingId}/email-sends`)
+  return res.data
+}
