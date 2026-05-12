@@ -96,7 +96,18 @@ export function ChatLog() {
   // compute newCount on subsequent length increases.
   const lastSeenLenRef = useRef(0)
 
-  const recent = useMemo(() => messages.slice(-MAX_RENDERED), [messages])
+  // Defensive frontend strip: observer interventions must never render as
+  // chat bubbles. Backend was switched to a dedicated observer_signals
+  // substrate 13 May 2026; this filter is the second line of defence in case
+  // any legacy <observer source="..."> messages still flow through the
+  // messages stream from older sessions.
+  const recent = useMemo(
+    () =>
+      messages
+        .filter((m) => !/^\s*<observer\s+source=/i.test(m.content || ''))
+        .slice(-MAX_RENDERED),
+    [messages]
+  )
 
   // Mirror current recent.length into a ref so the onScroll handler (whose
   // deps are intentionally empty so it isn't recreated every render) reads
