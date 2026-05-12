@@ -1108,8 +1108,8 @@ export default function MeetingsPage() {
           )}
         </div>
 
-        {/* Action buttons — only shown in list mode */}
-        {mode === 'list' && (
+        {/* Action buttons — hidden only during active recording/uploading */}
+        {!ingestMode && (
           <div className="flex items-center gap-2">
             <motion.button
               whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
