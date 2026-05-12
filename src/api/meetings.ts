@@ -15,6 +15,54 @@ export interface TranscriptData {
   paragraphs: TranscriptSegment[]
 }
 
+export interface ActionItem {
+  id: string
+  action: string
+  owner: string
+  due: string
+  priority: 'P1' | 'P2' | 'P3'
+  context: string
+  timestamp_range: string | null
+  dependencies: string[]
+  source: 'explicit' | 'implicit'
+}
+
+export interface AnalysisDecision {
+  decision: string
+  rationale: string
+  timestamp: string | null
+  owner: string | null
+}
+
+export interface AnalysisCommitment {
+  commitment: string
+  owner: string
+  to_whom: string
+  deadline: string
+  timestamp: string | null
+}
+
+export interface AnalysisRisk {
+  risk: string
+  severity: 'high' | 'medium' | 'low'
+  context: string
+}
+
+export interface AnalysisData {
+  one_line_summary: string
+  executive_summary: string
+  key_decisions: AnalysisDecision[]
+  unresolved_questions: Array<{ question: string; context: string; timestamp: string | null }>
+  themes: Array<{ theme: string; description: string; timestamp_range: string | null; weight: 'primary' | 'secondary' }>
+  standout_moments: Array<{ quote: string; speaker: string; timestamp: string | null; significance: string }>
+  sentiment_arc: string
+  people_entities: Array<{ name: string; role: string; key_interests: string }>
+  commitments: AnalysisCommitment[]
+  risks_red_flags: AnalysisRisk[]
+  strategic_implications: Array<{ implication: string; timeframe: 'immediate' | 'short-term' | 'long-term' }>
+  recommended_next_actions: Array<{ action: string; owner: string; priority: 'P1' | 'P2' | 'P3'; rationale: string }>
+}
+
 export interface Meeting {
   id: string
   title: string | null
@@ -22,13 +70,19 @@ export interface Meeting {
   ended_at: string | null
   duration_seconds: number | null
   audio_size_bytes: number | null
-  transcription_status: 'pending' | 'processing' | 'done' | 'error' | 'uploaded_awaiting_transcription'
+  audio_source: 'live' | 'upload' | 'uploaded' | null
+  transcription_status: 'pending' | 'processing' | 'retrying' | 'done' | 'error' | 'uploaded_awaiting_transcription'
   transcription_error: string | null
   transcript_text: string | null
   transcript_json: TranscriptData | null
   speaker_names: Record<string, string>
   transcript_diarised: boolean
   transcript_engine: 'whisper' | 'deepgram' | null
+  analysis_status: 'pending' | 'processing' | 'done' | 'error'
+  analysis_json: AnalysisData | null
+  action_items_json: ActionItem[] | null
+  analysis_completed_at: string | null
+  analysis_error: string | null
   client_id: string | null
   client_name: string | null
   created_at: string
@@ -107,4 +161,36 @@ export async function deleteMeeting(meetingId: string) {
 export function getExportUrl(meetingId: string, format: 'md' | 'txt' = 'md') {
   const base = (import.meta.env.VITE_API_URL || '/api')
   return `${base}/meetings/${meetingId}/export?format=${format}`
+}
+
+/**
+ * Upload a pre-recorded audio file as a new meeting.
+ * Creates the meeting row, uploads to storage, and fires the transcription
+ * pipeline in one HTTP call.
+ *
+ * @param file        - Audio file (mp3, m4a, wav, webm, ogg, mp4)
+ * @param opts.title  - Optional title (defaults to filename without extension)
+ * @param opts.onProgress - Upload progress callback (0-100)
+ */
+export async function uploadMeetingFile(
+  file: File,
+  opts?: { title?: string; onProgress?: (pct: number) => void },
+): Promise<{ id: string; audio_url: string; status: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  if (opts?.title) form.append('title', opts.title)
+
+  const res = await api.post<{ id: string; audio_url: string; status: string }>(
+    '/meetings/upload',
+    form,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: opts?.onProgress
+        ? (e) => {
+            if (e.total) opts.onProgress!(Math.round((e.loaded / e.total) * 100))
+          }
+        : undefined,
+    },
+  )
+  return res.data
 }

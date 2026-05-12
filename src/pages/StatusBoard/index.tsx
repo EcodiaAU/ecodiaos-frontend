@@ -639,9 +639,6 @@ export default function StatusBoardPage() {
     setFilterPriority(s => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n })
   const toggleNabFilter = (v: string) =>
     setFilterNab(s => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n })
-  const _toggleTypeFilter = (v: string) =>
-    setFilterType(s => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n })
-
   const toggleSelect = useCallback((id: string, v: boolean) =>
     setSelected(s => { const n = new Set(s); v ? n.add(id) : n.delete(id); return n }), [])
 
