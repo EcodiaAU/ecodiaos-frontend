@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
+import { uploadAudio } from '@/api/meetings'
 
 /**
  * /meetings/:id - Meeting detail, transcript + audio playback.
@@ -111,6 +112,11 @@ export default function MeetingDetailPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Upload-recording state (rescue path for lost live captures)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null) // null=idle, 0-100=uploading
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
   const authHeaders = (): Record<string, string> =>
     token ? { Authorization: `Bearer ${token}` } : {}
 
@@ -153,6 +159,30 @@ export default function MeetingDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  const handleUpload = async (file: File) => {
+    if (!id) return
+    setUploadError(null)
+    setUploadProgress(0)
+    try {
+      await uploadAudio(id, file, (pct) => setUploadProgress(pct))
+      // Optimistically flip to processing so the status badge + polling kick in immediately
+      setMeeting((m) => m ? { ...m, transcription_status: 'processing', transcription_error: null } : m)
+      setUploadProgress(null)
+      // Start polling until transcription completes
+      if (pollRef.current) clearInterval(pollRef.current)
+      pollRef.current = setInterval(async () => {
+        const updated = await fetchMeeting()
+        if (updated && !POLL_STATUSES.includes(updated.transcription_status)) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+        }
+      }, 5000)
+    } catch (err) {
+      setUploadError((err as Error).message || 'Upload failed')
+      setUploadProgress(null)
+    }
+  }
 
   const handleRetranscribe = async () => {
     if (!meeting) return
@@ -405,17 +435,65 @@ export default function MeetingDetailPage() {
                   </p>
                 </div>
               ) : status === 'error' ? (
-                <div className="rounded-xl bg-red-900/20 px-4 py-4 text-sm text-red-300/80">
-                  Transcription failed.
-                  {meeting.audio_signed_url
-                    ? ' The audio recording is still available above.'
-                    : ' The audio file could not be located in storage.'}
-                  {meeting.transcription_error && (
-                    <div className="mt-2 text-[11px] text-red-300/50 font-mono break-all">
-                      {meeting.transcription_error}
-                    </div>
-                  )}
-                </div>
+                <>
+                  {/* Hidden file input — triggered by the upload button below */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleUpload(file)
+                      e.target.value = '' // reset so same file can be reselected after error
+                    }}
+                  />
+
+                  <div className="rounded-xl bg-red-900/20 px-4 py-4 text-sm text-red-300/80 space-y-3">
+                    <p>
+                      Transcription failed.
+                      {meeting.audio_signed_url
+                        ? ' The audio recording is still available above.'
+                        : ' The in-browser recording could not be located in storage.'}
+                    </p>
+
+                    {meeting.transcription_error && (
+                      <div className="text-[11px] text-red-300/50 font-mono break-all">
+                        {meeting.transcription_error}
+                      </div>
+                    )}
+
+                    {/* Upload rescue path */}
+                    {uploadProgress !== null ? (
+                      <div className="space-y-1 pt-1">
+                        <div className="flex items-center justify-between text-xs text-red-300/60">
+                          <span>Uploading recording...</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-red-400 transition-all duration-200"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/20 hover:text-white transition-colors"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Upload laptop recording
+                      </button>
+                    )}
+
+                    {uploadError && (
+                      <p className="text-xs text-red-400">{uploadError}</p>
+                    )}
+                  </div>
+                </>
               ) : (
                 <div className="rounded-xl bg-white/5 px-4 py-6 text-center text-sm text-white/30">
                   {isPolling ? (
