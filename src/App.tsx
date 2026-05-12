@@ -7,6 +7,9 @@ import { SceneErrorBoundary } from './components/shared/SceneErrorBoundary'
 const CortexAmbientPage = lazy(() => import('./pages/CortexAmbient'))
 const LoginPage = lazy(() => import('./pages/Login'))
 const VoicePage = lazy(() => import('./pages/Voice'))
+const MeetingPage = lazy(() => import('./pages/Meeting'))
+const MeetingDetailPage = lazy(() => import('./pages/MeetingDetail'))
+const MeetingsListPage = lazy(() => import('./pages/MeetingsList'))
 
 function SceneSuspense({ children }: { children: React.ReactNode }) {
   return (
@@ -37,6 +40,9 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<SceneSuspense><LoginPage /></SceneSuspense>} />
         <Route path="/voice" element={<SceneSuspense><VoicePage /></SceneSuspense>} />
+        <Route path="/meeting" element={<SceneSuspense><MeetingPage /></SceneSuspense>} />
+        <Route path="/meetings/:id" element={<SceneSuspense><MeetingDetailPage /></SceneSuspense>} />
+        <Route path="/meetings" element={<SceneSuspense><MeetingsListPage /></SceneSuspense>} />
         <Route
           element={
             <ProtectedRoute>
