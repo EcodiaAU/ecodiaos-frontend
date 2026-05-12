@@ -1,6 +1,7 @@
 import {
   Waypoints,
   Brain,
+  Mic,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -59,6 +60,21 @@ export const SCENES: Record<string, SceneConfig> = {
     },
   },
 
+  // ── Meetings: recorder + diarised transcript ──
+  meetings: {
+    path: '/meetings',
+    label: 'Meetings',
+    icon: Mic,
+    position: { x: -1, y: 0, z: 0 },
+    aurora: {
+      orbs: [
+        { color: 'rgba(27, 122, 61, 0.12)', x: '35%', y: '40%', size: '70%' },
+        { color: 'rgba(46, 204, 113, 0.08)', x: '65%', y: '60%', size: '55%' },
+        { color: 'rgba(167, 139, 250, 0.05)', x: '80%', y: '25%', size: '40%' },
+      ],
+    },
+  },
+
   // ── Infrastructure: system internals ──
   settings: {
     path: '/settings',
@@ -71,6 +87,22 @@ export const SCENES: Record<string, SceneConfig> = {
         { color: 'rgba(217, 119, 6, 0.06)', x: '30%', y: '30%', size: '55%' },
         { color: 'rgba(46, 204, 113, 0.05)', x: '70%', y: '70%', size: '50%' },
         { color: 'rgba(251, 191, 36, 0.03)', x: '20%', y: '60%', size: '35%' },
+      ],
+    },
+  },
+
+  // ── Ops: status board triage surface ──
+  'status-board': {
+    path: '/status-board',
+    label: 'Status Board',
+    icon: Waypoints,
+    position: { x: 1, y: 1, z: 0 },
+    aurora: {
+      orbs: [
+        { color: 'rgba(27, 122, 61, 0.12)', x: '40%', y: '35%', size: '70%' },
+        { color: 'rgba(217, 119, 6, 0.09)', x: '70%', y: '60%', size: '55%' },
+        { color: 'rgba(46, 204, 113, 0.06)', x: '20%', y: '70%', size: '45%' },
+        { color: 'rgba(251, 191, 36, 0.04)', x: '85%', y: '25%', size: '35%' },
       ],
     },
   },
@@ -169,5 +201,5 @@ export const sceneVariants = {
   }),
 }
 
-/** Ordered list of nav links — Cortex first, then Settings */
-export const NAV_LINKS = [SCENES.cortex, SCENES.settings]
+/** Ordered list of nav links — Cortex first, then Status Board, then Settings */
+export const NAV_LINKS = [SCENES.cortex, SCENES['status-board'], SCENES.settings]
