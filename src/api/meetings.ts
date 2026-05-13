@@ -85,6 +85,7 @@ export interface Meeting {
   analysis_error: string | null
   client_id: string | null
   client_name: string | null
+  attendees: string | null
   created_at: string
   audio_signed_url?: string | null
 }
@@ -181,7 +182,7 @@ export async function updateTranscript(meetingId: string, transcriptText: string
   return res.data
 }
 
-export async function updateMeeting(meetingId: string, opts: { title?: string }) {
+export async function updateMeeting(meetingId: string, opts: { title?: string; attendees?: string | null }) {
   const res = await api.patch<Meeting>(`/meetings/${meetingId}`, opts)
   return res.data
 }

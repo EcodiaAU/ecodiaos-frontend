@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import {
   listMeetings, getMeeting, createMeeting, uploadChunk, stopMeeting,
-  retranscribeMeeting, updateSpeakers, reanalyseMeeting, deleteMeeting, getExportUrl,
+  retranscribeMeeting, updateSpeakers, reanalyseMeeting, updateMeeting, deleteMeeting, getExportUrl,
   uploadMeetingFile, emailMeetingAnalysis, getMeetingEmailSends,
   type Meeting, type TranscriptSegment, type AnalysisData, type ActionItem, type EmailSend,
 } from '@/api/meetings'
@@ -555,6 +555,44 @@ function AnalysisView({ analysis, actionItems }: { analysis: AnalysisData; actio
   )
 }
 
+// ─── Attendees input ──────────────────────────────────────────────────────────
+// Free-text list of who was in the meeting. Saved on blur (or Enter). The
+// analysis prompt passes this to Claude so it can attribute commitments and
+// decisions to the actual people, not "Speaker A".
+function AttendeesInput({
+  initial, saving, onSave,
+}: { initial: string; saving: boolean; onSave: (value: string) => void }) {
+  const [value, setValue] = useState(initial)
+  // Keep local state in sync if the meeting refetches with a different value
+  useEffect(() => { setValue(initial) }, [initial])
+
+  const commit = () => {
+    const trimmed = value.trim()
+    if (trimmed === (initial || '').trim()) return
+    onSave(trimmed)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[10px] text-on-surface-muted uppercase tracking-wider">
+        Who was in this meeting
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+        placeholder="e.g. Richard, Kurt, Meg, Angelica, Tate"
+        className="w-full rounded-lg bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-on-surface-muted outline-none"
+        style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+        maxLength={1000}
+        disabled={saving}
+      />
+    </div>
+  )
+}
+
 // ─── Speaker label (editable) ─────────────────────────────────────────────────
 function SpeakerLabel({
   code, names, onRename,
@@ -776,6 +814,11 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['meeting', meetingId] }),
   })
 
+  const attendeesMutation = useMutation({
+    mutationFn: (attendees: string) => updateMeeting(meetingId, { attendees: attendees || null }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['meeting', meetingId] }),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteMeeting(meetingId),
     onSuccess: () => {
@@ -875,6 +918,14 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
         </button>
       </div>
 
+      {/* Attendees - free-text list of who was in the meeting.
+          Passed to Claude so it can attribute commitments to the right people. */}
+      <AttendeesInput
+        initial={meeting.attendees || ''}
+        saving={attendeesMutation.isPending}
+        onSave={(value) => attendeesMutation.mutate(value)}
+      />
+
       {/* Transcription in-progress */}
       {isTranscribing && (
         <div
@@ -949,7 +1000,7 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
             <Mail className="h-3.5 w-3.5" />
             Email this analysis
           </button>
-          {Object.keys(meeting.speaker_names || {}).length > 0 && (
+          {(Object.keys(meeting.speaker_names || {}).length > 0 || meeting.attendees) && (
             <button
               onClick={() => reanalyseMutation.mutate()}
               disabled={reanalyseMutation.isPending}
