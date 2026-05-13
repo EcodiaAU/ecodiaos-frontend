@@ -4,23 +4,26 @@
  * Phase 1 upgrade (fork_mp3mmr0r_cf0ea6): three-column CSS grid layout
  * + Panel component + right rail wired with live Forks + Threads panels.
  *
+ * Phase 2 upgrade (fork_mp3ndv83_63898a): right rail extended to 400px with
+ * 6 live panels — Forks, Working Set, Observer Signals, Perception Bus,
+ * Pending Restarts, Inbox. Full hacker-monitor visual aesthetic: no truncation,
+ * monospaced columns, phosphor glows, tabular-nums, border flash on event arrival.
+ *
  * Layout (desktop >= 1280px):
  *   ROW 1 (60px)   HORIZON              full-width breathing oscilloscope
- *   ROW 2 (1fr)    LEFT RAIL (220px) | CHAT (flex-1) | RIGHT RAIL (280px)
+ *   ROW 2 (1fr)    LEFT RAIL (220px) | CHAT (flex-1) | RIGHT RAIL (400px)
  *
- * Chat column (flex column, overflow hidden):
- *   PresenceHeader → ChatLog (flex:1, own scroll) → ChatInputPanel → Footer
- *
- * Right rail panels (Phase 1):
- *   FORKS   — live fork cards (ForksStrip)
- *   THREADS — status_board rows (StatusThreads, Phase 2 will swap for useWorkingSet)
- *
- * Mobile (< 1280px): StripRow (.ambient-bottom-stack) visible, rails still render
- * but are narrow — Phase 3 will add responsive collapse.
+ * Right rail panels (Phase 2):
+ *   FORKS      — live fork cards (ForksStrip)
+ *   THREADS    — conductor working_set rows (useWorkingSet)
+ *   OBSERVER   — observer trio signals (useObserverSignals)
+ *   PERCEPTION — application-events.jsonl stream (usePerceptionBus)
+ *   RESTARTS   — pending_restart_requests (useRestartRequests)
+ *   INBOX      — email inbox unread counts (useInboxCounts)
  *
  * No three.js. No <Canvas>. No particle field.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { ChatLog } from './ChatLog'
@@ -28,13 +31,118 @@ import { ChatInputPanel } from './ChatInputPanel'
 import { Horizon } from './Horizon'
 import { PresenceHeader } from './PresenceHeader'
 import { ForksStrip } from './ForksStrip'
-import { StatusThreads } from './StatusThreads'
 import { StripRow } from './StripRow'
 import { Footer } from './Footer'
 import { Panel } from './Panel'
 import { useStatusBoard } from './useStatusBoard'
 import { useForks } from './useForks'
+import { useWorkingSet } from './useWorkingSet'
+import { useObserverSignals } from './useObserverSignals'
+import { usePerceptionBus } from './usePerceptionBus'
+import { useRestartRequests } from './useRestartRequests'
+import { useInboxCounts } from './useInboxCounts'
 import { AMBIENT_PALETTE } from './palette'
+
+// ── Age formatting ──────────────────────────────────────────────────────────
+function formatAge(isoString: string | null | undefined): string {
+  if (!isoString) return '—'
+  const seconds = (Date.now() - new Date(isoString).getTime()) / 1000
+  if (seconds < 60) return `${Math.floor(seconds)}s`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
+  return `${Math.floor(seconds / 86400)}d`
+}
+
+// ── Shared style primitives ─────────────────────────────────────────────────
+const MONO_FONT = "'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace"
+const SANS_FONT = "'Inter', system-ui, sans-serif"
+
+const ROW: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 8,
+  padding: '7px 12px',
+  borderBottom: '1px solid rgba(255,178,122,0.04)',
+}
+const TEXT_PRIMARY: React.CSSProperties = {
+  color: 'rgba(255,255,255,0.88)',
+  fontFamily: SANS_FONT,
+  fontSize: 12,
+  lineHeight: 1.5,
+  wordBreak: 'break-word',
+  overflowWrap: 'anywhere',
+  whiteSpace: 'normal',
+}
+const TEXT_DIM: React.CSSProperties = {
+  color: 'rgba(255,255,255,0.40)',
+  fontFamily: SANS_FONT,
+  fontSize: 11,
+}
+const MONO_CELL: React.CSSProperties = {
+  fontFamily: MONO_FONT,
+  fontSize: 11,
+  fontVariantNumeric: 'tabular-nums',
+  color: 'rgba(255,255,255,0.45)',
+  flexShrink: 0,
+  whiteSpace: 'nowrap',
+}
+const TABULAR: React.CSSProperties = {
+  fontVariantNumeric: 'tabular-nums',
+}
+
+// ── Status dot colors ────────────────────────────────────────────────────────
+const THREAD_STATUS_COLOR: Record<string, string> = {
+  active: '#ffb27a',
+  blocked: '#6366f1',
+  parked: 'rgba(255,255,255,0.2)',
+}
+
+// ── Observer source colors ───────────────────────────────────────────────────
+const OBSERVER_COLOR: Record<string, string> = {
+  coherence: '#ffb27a',
+  actionAudit: '#6366f1',
+  attentionEcon: '#22c55e',
+  attention: '#22c55e',
+}
+const OBSERVER_LABEL: Record<string, string> = {
+  coherence: 'coherence·',
+  actionAudit: 'actionAudit·',
+  attentionEcon: 'attentionEcon·',
+  attention: 'attention·',
+}
+
+// ── Perception type icons ────────────────────────────────────────────────────
+const PERCEPTION_ICON: Record<string, string> = {
+  fork: '⑂',
+  fork_spawn: '⑂',
+  email: '✉',
+  cron: '⏱',
+  fs: '📁',
+  pattern_applied: '✓',
+  pattern_not_applied: '✗',
+  hook_fire: '⚡',
+}
+
+// ── Flash-on-change hook ─────────────────────────────────────────────────────
+// Returns a CSS class name that flashes the element's border on data change.
+function useFlash(value: unknown): boolean {
+  const [flashing, setFlashing] = useState(false)
+  const prevRef = useRef<string>(JSON.stringify(value))
+
+  useEffect(() => {
+    const next = JSON.stringify(value)
+    if (next !== prevRef.current) {
+      prevRef.current = next
+      setFlashing(true)
+      const t = setTimeout(() => setFlashing(false), 300)
+      return () => clearTimeout(t)
+    }
+  }, [value])
+
+  return flashing
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function CortexAmbientPage() {
   const [audioEnabled, setAudioEnabled] = useState(false)
@@ -44,16 +152,42 @@ export default function CortexAmbientPage() {
   const statusRows = useStatusBoard()
   const { forks, runningCount } = useForks()
 
-  // Ctrl+. toggles audio-tray icon state (audio engine itself is a future /listening-room route)
+  // Phase 2 hooks
+  const { threads, activeCount, blockedCount } = useWorkingSet()
+  const { signals, unackedCount } = useObserverSignals()
+  const { events: perceptionEvents, source: perceptionSource } = usePerceptionBus()
+  const { requests: restartRequests, count: restartCount } = useRestartRequests()
+  const { tate: inboxTate, code: inboxCode, total: inboxTotal } = useInboxCounts()
+
+  // Flash states
+  const observerFlash = useFlash(signals)
+  const perceptionFlash = useFlash(perceptionEvents)
+  const restartFlash = useFlash(restartRequests)
+  const inboxFlash = useFlash(inboxTotal)
+
+  // Ctrl+. toggles audio-tray icon state
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === '.') {
-        setAudioEnabled((v) => !v)
-      }
+      if (e.ctrlKey && e.key === '.') setAudioEnabled((v) => !v)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // Inbox urgency: total > 0 and oldest is stale (age ends with h or d)
+  const inboxIsUrgent = (() => {
+    const age = inboxTate.oldestAge ?? inboxCode.oldestAge
+    if (!age) return false
+    return age.endsWith('h') || age.endsWith('d')
+  })()
+
+  // Urgency dot color for inbox age
+  function inboxAgeDot(age: string | null): string {
+    if (!age) return 'rgba(255,255,255,0.15)'
+    if (age.endsWith('d')) return '#ef4444'   // red — days old
+    if (age.endsWith('h') && parseInt(age) >= 4) return '#f59e0b' // amber — hours
+    return '#22c55e'  // green — fresh
+  }
 
   return (
     <div
@@ -65,7 +199,7 @@ export default function CortexAmbientPage() {
         color: AMBIENT_PALETTE.text,
         display: 'grid',
         gridTemplateRows: '60px 1fr',
-        gridTemplateColumns: '220px 1fr 280px',
+        gridTemplateColumns: '220px 1fr 400px',
         height: '100vh',
         overflow: 'hidden',
       }}
@@ -87,7 +221,6 @@ export default function CortexAmbientPage() {
           borderRight: '1px solid rgba(255,178,122,0.06)',
         }}
       >
-        {/* Phase 3 will populate with nav / quick-action panels */}
         <div
           style={{
             fontSize: 9,
@@ -96,7 +229,7 @@ export default function CortexAmbientPage() {
             textAlign: 'center',
             padding: '16px 0',
             textTransform: 'uppercase',
-            fontFamily: "'Inter', system-ui, sans-serif",
+            fontFamily: SANS_FONT,
           }}
         >
           panels coming in phase 3
@@ -119,22 +252,15 @@ export default function CortexAmbientPage() {
           forkCount={runningCount}
         />
 
-        {/* ChatLog — flex:1, own internal scroll surface */}
         <div
           className="ambient-chat-region ambient-chatlog-scroll"
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-          }}
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
         >
           <ChatLog />
         </div>
 
-        {/* Input — sits at the bottom of the flex column naturally */}
         <ChatInputPanel />
 
-        {/* StripRow — condensed summary, hidden on desktop (>= 1280px) */}
         <div className="ambient-bottom-stack">
           <StripRow forks={forks} rows={statusRows} />
         </div>
@@ -142,7 +268,7 @@ export default function CortexAmbientPage() {
         <Footer />
       </div>
 
-      {/* ── ROW 2, COL 3: Right rail ─────────────────────────────────────────── */}
+      {/* ── ROW 2, COL 3: Right rail (400px) ────────────────────────────────── */}
       <div
         data-rail="right"
         style={{
@@ -154,7 +280,10 @@ export default function CortexAmbientPage() {
           borderLeft: '1px solid rgba(255,178,122,0.06)',
         }}
       >
-        {/* Panel 1: FORKS — live fork cards */}
+
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 1: FORKS — live fork cards                                    */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
         <Panel
           id="forks"
           label="FORKS"
@@ -166,22 +295,502 @@ export default function CortexAmbientPage() {
           <ForksStrip forks={forks} layout="vertical" />
         </Panel>
 
-        {/* Panel 2: THREADS — status_board rows (Phase 2 will replace with useWorkingSet) */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 2: THREADS — conductor working_set                            */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
         <Panel
           id="threads"
           label="THREADS"
-          count={statusRows.length}
-          pulse={true}
-          maxHeight={200}
+          count={`${activeCount}a ${blockedCount}b`}
+          pulse={threads.length > 0}
+          maxHeight={220}
           defaultCollapsed={false}
         >
-          <StatusThreads rows={statusRows} />
+          {threads.length === 0 ? (
+            <div style={{ ...ROW, ...TEXT_DIM }}>no active threads</div>
+          ) : (
+            threads.map((t) => (
+              <div key={t.id} style={ROW}>
+                <span
+                  aria-hidden
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    marginTop: 4,
+                    background: THREAD_STATUS_COLOR[t.status] ?? 'rgba(255,255,255,0.2)',
+                    boxShadow: t.status === 'active'
+                      ? '0 0 6px rgba(255,178,122,0.5)'
+                      : t.status === 'blocked'
+                        ? '0 0 6px rgba(99,102,241,0.5)'
+                        : 'none',
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ ...TEXT_PRIMARY, marginBottom: 2 }}>{t.topic}</div>
+                  {t.blocking_on && (
+                    <div style={{ ...MONO_CELL, color: '#6366f1' }}>
+                      blocked: {t.blocking_on}
+                    </div>
+                  )}
+                </div>
+                <span style={{ ...MONO_CELL, ...TABULAR, marginTop: 2 }}>
+                  {formatAge(t.last_touched_at)}
+                </span>
+              </div>
+            ))
+          )}
         </Panel>
 
-        {/* Panels 3-6 (Observer/Perception/Inbox/Restarts) — Phase 2, not yet */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 3: OBSERVER — observer trio signals                           */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            transition: 'box-shadow 200ms ease',
+            boxShadow: observerFlash && unackedCount > 0
+              ? '0 0 0 1px rgba(255,178,122,0.6)'
+              : 'none',
+            borderRadius: 6,
+            marginBottom: 4,
+          }}
+        >
+          <Panel
+            id="observer"
+            label="OBSERVER"
+            count={unackedCount > 0 ? `${unackedCount} unack` : `${signals.length}`}
+            pulse={unackedCount > 0}
+            maxHeight={240}
+            defaultCollapsed={true}
+          >
+            {signals.length === 0 ? (
+              <div style={{ ...ROW, ...TEXT_DIM, fontFamily: MONO_FONT }}>
+                <span style={{ color: '#22c55e', marginRight: 6 }}>●</span>
+                no active signals
+              </div>
+            ) : (
+              signals.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    ...ROW,
+                    background: !s.acknowledged
+                      ? 'rgba(99,102,241,0.04)'
+                      : 'transparent',
+                  }}
+                >
+                  {/* Source dot + label */}
+                  <div style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 4, paddingTop: 2 }}>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: OBSERVER_COLOR[s.observer_name] ?? 'rgba(255,255,255,0.3)',
+                        boxShadow: `0 0 5px ${OBSERVER_COLOR[s.observer_name] ?? 'rgba(255,255,255,0.3)'}`,
+                        flexShrink: 0,
+                        marginTop: 2,
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                      <span
+                        style={{
+                          fontFamily: MONO_FONT,
+                          fontSize: 10,
+                          color: OBSERVER_COLOR[s.observer_name] ?? 'rgba(255,255,255,0.45)',
+                          letterSpacing: '0.03em',
+                        }}
+                      >
+                        {OBSERVER_LABEL[s.observer_name] ?? `${s.observer_name}·`}
+                      </span>
+                      <span style={{ ...MONO_CELL, fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                        {s.signal_kind}
+                      </span>
+                    </div>
+                    {/* Full message text — no truncation */}
+                    <div
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 11,
+                        color: 'rgba(255,255,255,0.82)',
+                        lineHeight: 1.55,
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {s.message}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, paddingTop: 2 }}>
+                    {s.confidence != null && (
+                      <span style={{ ...MONO_CELL, ...TABULAR, fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
+                        {s.confidence.toFixed(2)}
+                      </span>
+                    )}
+                    <span style={{ ...MONO_CELL, ...TABULAR, fontSize: 10 }}>
+                      {formatAge(s.created_at)}
+                    </span>
+                    {!s.acknowledged && (
+                      <span
+                        style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: '50%',
+                          background: '#6366f1',
+                          boxShadow: '0 0 4px rgba(99,102,241,0.7)',
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </Panel>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 4: PERCEPTION — scrolling event log                          */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            transition: 'box-shadow 200ms ease',
+            boxShadow: perceptionFlash
+              ? '0 0 0 1px rgba(255,178,122,0.45)'
+              : 'none',
+            borderRadius: 6,
+            marginBottom: 4,
+          }}
+        >
+          <Panel
+            id="perception"
+            label={
+              perceptionSource === 'jsonl_unavailable'
+                ? 'PERCEPTION'
+                : 'PERCEPTION ···'
+            }
+            count={perceptionEvents.length}
+            pulse={false}
+            maxHeight={280}
+            defaultCollapsed={true}
+          >
+            {perceptionSource === 'jsonl_unavailable' ? (
+              <div
+                style={{
+                  ...ROW,
+                  fontFamily: MONO_FONT,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.30)',
+                }}
+              >
+                stream unavailable — no application-events.jsonl yet
+              </div>
+            ) : perceptionEvents.length === 0 ? (
+              <div style={{ ...ROW, ...TEXT_DIM, fontFamily: MONO_FONT }}>
+                no events
+              </div>
+            ) : (
+              perceptionEvents.map((ev, i) => {
+                const opacity = Math.max(0.25, 1 - i * 0.055)
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '18px 110px 1fr 36px',
+                      gap: 8,
+                      padding: '5px 12px',
+                      borderBottom: '1px solid rgba(255,178,122,0.03)',
+                      opacity,
+                      alignItems: 'baseline',
+                    }}
+                  >
+                    {/* Icon */}
+                    <span
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 11,
+                        color: 'rgba(255,178,122,0.7)',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {PERCEPTION_ICON[ev.type] ?? '·'}
+                    </span>
+                    {/* Source-id column */}
+                    <span
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.35)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {ev.source ?? ev.type}
+                    </span>
+                    {/* Summary — full text, wraps naturally */}
+                    <span
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 11,
+                        color: 'rgba(255,255,255,0.75)',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        whiteSpace: 'normal',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {ev.summary ?? ev.type}
+                    </span>
+                    {/* Age */}
+                    <span
+                      style={{
+                        ...MONO_CELL,
+                        ...TABULAR,
+                        fontSize: 10,
+                        textAlign: 'right',
+                      }}
+                    >
+                      {formatAge(ev.timestamp)}
+                    </span>
+                  </div>
+                )
+              })
+            )}
+          </Panel>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 5: RESTARTS — pending ecodia-api restart requests             */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            transition: 'box-shadow 200ms ease',
+            boxShadow: restartFlash && restartCount > 0
+              ? '0 0 0 1px rgba(245,158,11,0.7)'
+              : 'none',
+            borderRadius: 6,
+            marginBottom: 4,
+          }}
+        >
+          <Panel
+            id="restarts"
+            label="RESTARTS"
+            count={restartCount > 0 ? `${restartCount} pending` : 'none'}
+            pulse={restartCount > 0}
+            maxHeight={180}
+            defaultCollapsed={restartCount === 0}
+          >
+            {restartCount === 0 ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 12px',
+                  fontFamily: MONO_FONT,
+                  fontSize: 11,
+                  color: '#22c55e',
+                }}
+              >
+                <span
+                  style={{
+                    animation: 'all-clear-pulse 3s ease-in-out infinite',
+                  }}
+                >
+                  ●
+                </span>
+                ALL CLEAR
+              </div>
+            ) : (
+              restartRequests.map((r) => (
+                <div key={r.id} style={{ ...ROW, alignItems: 'flex-start' }}>
+                  {/* Amber pulse dot */}
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: '#f59e0b',
+                      boxShadow: '0 0 8px rgba(245,158,11,0.7)',
+                      flexShrink: 0,
+                      marginTop: 3,
+                      animation: 'amber-pulse 1.5s ease-in-out infinite',
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {r.requesting_fork_id && (
+                      <div
+                        style={{
+                          fontFamily: MONO_FONT,
+                          fontSize: 10,
+                          color: 'rgba(255,255,255,0.35)',
+                          marginBottom: 3,
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {r.requesting_fork_id}
+                      </div>
+                    )}
+                    {/* Full reason text — no truncation */}
+                    <div
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 12,
+                        color: '#f59e0b',
+                        lineHeight: 1.5,
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {r.reason}
+                    </div>
+                  </div>
+                  <span style={{ ...MONO_CELL, ...TABULAR, marginTop: 2, flexShrink: 0 }}>
+                    {formatAge(r.requested_at)}
+                  </span>
+                </div>
+              ))
+            )}
+          </Panel>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 6: INBOX — email unread counts by account                    */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            transition: 'box-shadow 200ms ease',
+            boxShadow: inboxFlash && inboxTotal > 0
+              ? '0 0 0 1px rgba(255,178,122,0.4)'
+              : 'none',
+            borderRadius: 6,
+            marginBottom: 4,
+          }}
+        >
+          <Panel
+            id="inbox"
+            label="INBOX"
+            count={`${inboxTotal} unread`}
+            pulse={inboxTotal > 0 && inboxIsUrgent}
+            maxHeight={100}
+            defaultCollapsed={true}
+          >
+            {/* tate@ row */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '140px 80px 1fr',
+                gap: 8,
+                padding: '7px 12px',
+                borderBottom: '1px solid rgba(255,178,122,0.04)',
+                alignItems: 'center',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: MONO_FONT,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.45)',
+                }}
+              >
+                tate@ecodia.au
+              </span>
+              <span
+                style={{
+                  fontFamily: MONO_FONT,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  ...TABULAR,
+                  color: inboxTate.unread > 0 ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.25)',
+                }}
+              >
+                {inboxTate.unread} unread
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {inboxTate.oldestAge ? (
+                  <>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: inboxAgeDot(inboxTate.oldestAge),
+                        boxShadow: `0 0 4px ${inboxAgeDot(inboxTate.oldestAge)}`,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ ...MONO_CELL, ...TABULAR }}>
+                      oldest {inboxTate.oldestAge}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ ...MONO_CELL, color: 'rgba(255,255,255,0.2)' }}>—</span>
+                )}
+              </div>
+            </div>
+            {/* code@ row */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '140px 80px 1fr',
+                gap: 8,
+                padding: '7px 12px',
+                alignItems: 'center',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: MONO_FONT,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.45)',
+                }}
+              >
+                code@ecodia.au
+              </span>
+              <span
+                style={{
+                  fontFamily: MONO_FONT,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  ...TABULAR,
+                  color: inboxCode.unread > 0 ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.25)',
+                }}
+              >
+                {inboxCode.unread} unread
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {inboxCode.oldestAge ? (
+                  <>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: inboxAgeDot(inboxCode.oldestAge),
+                        boxShadow: `0 0 4px ${inboxAgeDot(inboxCode.oldestAge)}`,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ ...MONO_CELL, ...TABULAR }}>
+                      oldest {inboxCode.oldestAge}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ ...MONO_CELL, color: 'rgba(255,255,255,0.2)' }}>—</span>
+                )}
+              </div>
+            </div>
+          </Panel>
+        </div>
       </div>
 
-      {/* ── Page-local keyframes (self-contained, no leakage) ──────────────── */}
+      {/* ── Page-local keyframes ────────────────────────────────────────────── */}
       <style>{`
         @keyframes ambient-pulse {
           0%, 100% { opacity: 0.45; transform: scale(0.85); }
@@ -205,6 +814,14 @@ export default function CortexAmbientPage() {
         @keyframes panel-pulse {
           0%, 100% { opacity: 0.45; transform: scale(0.85); }
           50%      { opacity: 1;    transform: scale(1.15); }
+        }
+        @keyframes amber-pulse {
+          0%, 100% { box-shadow: 0 0 4px rgba(245,158,11,0.4); }
+          50%      { box-shadow: 0 0 12px rgba(245,158,11,0.9); }
+        }
+        @keyframes all-clear-pulse {
+          0%, 100% { opacity: 0.55; text-shadow: 0 0 4px rgba(34,197,94,0.3); }
+          50%      { opacity: 1;    text-shadow: 0 0 10px rgba(34,197,94,0.8); }
         }
 
         /* StripRow hidden on desktop — right rail provides the same info */
