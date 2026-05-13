@@ -279,17 +279,9 @@ export default function CortexAmbientPage() {
               overflow: 'hidden',
             }}
           >
-            {/* Horizon oscilloscope as absolute background */}
-            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
-              <Horizon
-                runningForks={runningCount}
-                height={44}
-              />
-            </div>
-            {/* Chips row, floats above oscilloscope */}
+            {/* Chips row — Horizon lives inside its own chip, not as a backdrop */}
             <div
               style={{
-                position: 'relative', zIndex: 1,
                 display: 'flex', alignItems: 'stretch', height: '100%',
               }}
             >
@@ -386,6 +378,23 @@ export default function CortexAmbientPage() {
               <span style={{ ...VAL, fontSize: 13 }}>
                 {opsMetrics.last_response_ms != null ? `${opsMetrics.last_response_ms}ms` : '—'}
               </span>
+            </div>
+            {/* HRTBEAT chip — self-contained sparkline panel, no full-width backdrop */}
+            <div
+              style={{
+                ...CHIP,
+                width: 182,
+                flexShrink: 0,
+                padding: '3px 8px',
+                overflow: 'hidden',
+                justifyContent: 'flex-start',
+                gap: 2,
+              }}
+            >
+              <span style={LBL}>HRTBEAT</span>
+              <div style={{ height: 24, overflow: 'hidden' }}>
+                <Horizon runningForks={runningCount} height={24} />
+              </div>
             </div>
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', gap: 14 }}>
               <span style={{
