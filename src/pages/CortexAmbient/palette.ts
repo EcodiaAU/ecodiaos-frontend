@@ -13,15 +13,19 @@ export const AMBIENT_PALETTE = {
   base: '#06070a',      // background
   fog: '#0a0d12',       // mid-distance haze
   ambient: '#1a2030',   // ambient light tint
-  coreGlow: '#ffb27a',  // ember - the signature accent. Conductor presence colour.
+  coreGlow: '#ffb27a',  // ember - conductor presence colour (identity, do not replace with gold)
   emberSoft: '#e89060',
   emberDeep: '#9a4c28',
+  // Phase 8: gold/yellow/green accent palette (replaces decorative orange-reds)
+  gold: '#d4af37',          // deep warm gold - chip borders, panel dividers, accent lines
+  brightAmber: '#f5c518',   // bright gold-yellow - highlights, sparklines
+  acidGreen: '#c8f243',     // acid yellow-green - LIVE indicators, active signals
   cyan: '#5ad9c8',      // ecodiaos next_action_by
   amber: '#f0a847',     // tate next_action_by
   violet: '#a47cff',    // client next_action_by
   grey: '#5a6577',      // external next_action_by
   done: '#2c3140',      // archived / done
-  error: '#e85a5a',     // error/aborted
+  error: '#e85a5a',     // error/aborted (functional - keep red)
   text: '#e8ecf2',
   textDim: '#7a8294',
 } as const

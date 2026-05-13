@@ -190,14 +190,17 @@ export function ChatLog() {
             scrollBehavior: 'auto',
             background: 'linear-gradient(180deg, rgba(8,10,14,0.55) 0%, rgba(6,7,10,0.78) 100%)',
             borderRadius: 6,
-            border: '1px solid rgba(255,178,122,0.10)',
+            border: '1px solid rgba(212,175,55,0.14)',
             scrollbarWidth: 'thin',
-            scrollbarColor: 'rgba(255,178,122,0.25) transparent',
+            scrollbarColor: 'rgba(212,175,55,0.28) transparent',
+            transition: 'border-color 200ms ease',
           }}
         >
           <div className="px-5 py-4 space-y-4">
             {recent.map((m) => (
-              <Bubble key={m.id} role={m.role} content={m.content} />
+              <div key={m.id} className="ambient-msg-enter">
+                <Bubble role={m.role} content={m.content} />
+              </div>
             ))}
             {isStreaming && (
               <Bubble role="assistant" content={streamText} streaming />

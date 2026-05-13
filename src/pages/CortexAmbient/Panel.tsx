@@ -93,10 +93,17 @@ export function Panel({
       ref={rootRef}
       data-panel-id={id}
       style={{
-        border: '1px solid rgba(255,178,122,0.08)',
+        border: '1px solid rgba(212,175,55,0.10)',
         borderRadius: 6,
         marginBottom: 4,
         overflow: 'hidden',
+        transition: 'border-color 200ms ease, box-shadow 200ms ease',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(212,175,55,0.22)'
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(212,175,55,0.10)'
       }}
     >
       {/* Header */}
@@ -109,7 +116,6 @@ export function Panel({
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            // Simulate click without meta/shift
             setCollapsed((v) => {
               const next = !v
               try { localStorage.setItem(lsKey, String(next)) } catch {}
@@ -123,8 +129,9 @@ export function Panel({
           gap: 6,
           padding: '5px 8px',
           cursor: 'pointer',
-          background: 'rgba(255,178,122,0.03)',
+          background: 'rgba(212,175,55,0.03)',
           userSelect: 'none',
+          transition: 'background 150ms ease',
         }}
       >
         {/* Live pulse dot */}
@@ -135,7 +142,7 @@ export function Panel({
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: '#ffb27a',
+              background: '#d4af37',
               flexShrink: 0,
               animation: 'panel-pulse 2s ease-in-out infinite',
             }}
@@ -172,16 +179,19 @@ export function Panel({
         {/* Spacer */}
         <span style={{ flex: 1 }} />
 
-        {/* Collapse chevron */}
+        {/* Collapse chevron — rotates smoothly on expand/collapse */}
         <span
           aria-hidden
           style={{
             fontSize: 9,
-            color: 'rgba(255,255,255,0.25)',
+            color: 'rgba(212,175,55,0.50)',
             lineHeight: 1,
+            display: 'inline-block',
+            transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+            transition: 'transform 200ms ease, color 150ms ease',
           }}
         >
-          {collapsed ? '▶' : '▼'}
+          ▼
         </span>
       </div>
 
@@ -193,7 +203,7 @@ export function Panel({
           maxHeight: collapsed ? 0 : maxHeight,
           opacity: collapsed ? 0 : 1,
           pointerEvents: collapsed ? 'none' : 'auto',
-          transition: 'max-height 200ms ease, opacity 200ms ease',
+          transition: 'max-height 220ms cubic-bezier(0.4,0,0.2,1), opacity 180ms ease',
         }}
       >
         {children}

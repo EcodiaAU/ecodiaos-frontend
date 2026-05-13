@@ -55,8 +55,18 @@ export interface OpsMetrics {
   energy_by_account: EnergyByAccount
   status_priorities: StatusPriorities
   status_total: number
-  // process state (from state.conductor_uptime_sec)
+  // process state
   uptime_sec: number | null
+  memory_rss_mb: number | null   // Phase 8: MEM chip
+  // Phase 8: git chip
+  git_sha: string | null
+  git_age_sec: number | null
+  git_branch: string | null
+  // Phase 8: disk chip
+  disk_pct: number | null
+  // Phase 8: cron chip
+  cron_next_name: string | null
+  cron_next_in_sec: number | null
   // client-measured API round-trip latency (ms)
   last_response_ms: number | null
 }
@@ -78,6 +88,13 @@ const EMPTY: OpsMetrics = {
   status_priorities: { P1: 0, P2: 0, P3: 0, P4: 0, P5: 0 },
   status_total: 0,
   uptime_sec: null,
+  memory_rss_mb: null,
+  git_sha: null,
+  git_age_sec: null,
+  git_branch: null,
+  disk_pct: null,
+  cron_next_name: null,
+  cron_next_in_sec: null,
   last_response_ms: null,
 }
 
@@ -149,6 +166,13 @@ export function useOpsMetrics(pollMs = 60_000): OpsMetrics {
           },
           status_total: total,
           uptime_sec: data?.state?.conductor_uptime_sec ?? null,
+          memory_rss_mb: data?.state?.memory_rss_mb ?? null,
+          git_sha: data?.state?.git?.sha ?? null,
+          git_age_sec: data?.state?.git?.age_sec ?? null,
+          git_branch: data?.state?.git?.branch ?? null,
+          disk_pct: data?.state?.disk?.pct ?? null,
+          cron_next_name: data?.next_cron?.name ?? null,
+          cron_next_in_sec: data?.next_cron?.next_in_sec ?? null,
           last_response_ms: responseMs,
         })
       } catch {

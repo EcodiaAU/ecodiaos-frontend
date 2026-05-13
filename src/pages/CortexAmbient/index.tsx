@@ -258,7 +258,8 @@ export default function CortexAmbientPage() {
         const CHIP: React.CSSProperties = {
           display: 'flex', flexDirection: 'column', justifyContent: 'center',
           gap: 2, padding: '0 10px',
-          borderRight: '1px solid rgba(255,178,122,0.06)',
+          borderRight: '1px solid rgba(212,175,55,0.09)',
+          transition: 'background 150ms ease',
         }
         const LBL: React.CSSProperties = {
           fontFamily: MONO_FONT, fontSize: 8, letterSpacing: '0.18em',
@@ -268,13 +269,14 @@ export default function CortexAmbientPage() {
           fontFamily: MONO_FONT, fontSize: 14,
           fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.88)',
           lineHeight: 1,
+          transition: 'color 300ms ease, transform 200ms ease',
         }
         return (
           <div
             style={{
               gridColumn: '1 / -1', gridRow: 1,
               position: 'relative',
-              borderBottom: '1px solid rgba(255,178,122,0.08)',
+              borderBottom: '1px solid rgba(212,175,55,0.12)',
               background: 'rgba(0,0,0,0.30)',
               overflow: 'hidden',
             }}
@@ -344,7 +346,7 @@ export default function CortexAmbientPage() {
             <div style={CHIP}>
               <span style={LBL}>THREADS</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                <span style={{ ...VAL, color: activeCount > 0 ? '#ffb27a' : 'rgba(255,255,255,0.88)' }}>
+                <span style={{ ...VAL, color: activeCount > 0 ? '#d4af37' : 'rgba(255,255,255,0.88)', transition: 'color 300ms ease' }}>
                   {activeCount}
                 </span>
                 {blockedCount > 0 && (
@@ -396,10 +398,74 @@ export default function CortexAmbientPage() {
                 <Horizon runningForks={runningCount} height={24} />
               </div>
             </div>
+
+            {/* MEM chip — ecodia-api RSS % of 2048MB cap */}
+            {opsMetrics.memory_rss_mb != null && (() => {
+              const memPct = Math.round((opsMetrics.memory_rss_mb / 2048) * 100)
+              const memColor = memPct > 70 ? '#ef4444' : memPct > 45 ? '#d4af37' : '#c8f243'
+              return (
+                <div style={CHIP}>
+                  <span style={LBL}>MEM</span>
+                  <span style={{ ...VAL, fontSize: 13, color: memColor, transition: 'color 300ms ease' }}>
+                    {memPct}%
+                  </span>
+                </div>
+              )
+            })()}
+
+            {/* DISK chip — VPS root partition usage */}
+            {opsMetrics.disk_pct != null && (() => {
+              const diskColor = opsMetrics.disk_pct > 85 ? '#ef4444' : opsMetrics.disk_pct > 70 ? '#d4af37' : 'rgba(255,255,255,0.88)'
+              return (
+                <div style={CHIP}>
+                  <span style={LBL}>DISK</span>
+                  <span style={{ ...VAL, fontSize: 13, color: diskColor, transition: 'color 300ms ease' }}>
+                    {opsMetrics.disk_pct}%
+                  </span>
+                </div>
+              )
+            })()}
+
+            {/* GIT chip — last commit on ecodiaos main */}
+            {opsMetrics.git_sha != null && (() => {
+              const ageSec = opsMetrics.git_age_sec ?? 0
+              const ageStr = ageSec < 60 ? `${ageSec}s`
+                : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m`
+                : ageSec < 86400 ? `${Math.floor(ageSec / 3600)}h`
+                : `${Math.floor(ageSec / 86400)}d`
+              return (
+                <div style={{ ...CHIP, minWidth: 120 }}>
+                  <span style={LBL}>GIT</span>
+                  <span style={{ ...VAL, fontSize: 11, color: '#c8f243', letterSpacing: '0.03em' }}>
+                    {opsMetrics.git_branch ?? 'main'}@{opsMetrics.git_sha}
+                    <span style={{ color: 'rgba(255,255,255,0.35)', marginLeft: 4 }}>{ageStr}</span>
+                  </span>
+                </div>
+              )
+            })()}
+
+            {/* CRON chip — next scheduled task countdown */}
+            {opsMetrics.cron_next_in_sec != null && (() => {
+              const sec = opsMetrics.cron_next_in_sec
+              const countdownStr = sec < 60 ? `${sec}s`
+                : sec < 3600 ? `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`
+                : `${Math.floor(sec / 3600)}h${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m`
+              const name = (opsMetrics.cron_next_name ?? 'cron').replace(/-/g, '‒')
+              return (
+                <div style={{ ...CHIP, minWidth: 90 }}>
+                  <span style={LBL}>CRON</span>
+                  <span style={{ ...VAL, fontSize: 11, color: '#d4af37' }} title={opsMetrics.cron_next_name ?? ''}>
+                    {name.length > 12 ? name.slice(0, 12) + '…' : name}
+                    <span style={{ color: 'rgba(200,242,67,0.70)', marginLeft: 5 }}>@{countdownStr}</span>
+                  </span>
+                </div>
+              )
+            })()}
+
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', gap: 14 }}>
               <span style={{
                 fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.12em',
-                color: blinkOn ? '#22c55e' : 'rgba(34,197,94,0.25)',
+                color: blinkOn ? '#c8f243' : 'rgba(200,242,67,0.22)',
                 transition: 'color 0.15s',
               }}>
                 {'●'} CONNECTED
@@ -459,7 +525,7 @@ export default function CortexAmbientPage() {
                     style={{
                       height: '100%',
                       width: `${Math.min(100, pctPct)}%`,
-                      background: 'linear-gradient(90deg, #ffb27a, #ff6a10)',
+                      background: 'linear-gradient(90deg, #d4af37, #f5c518)',
                       borderRadius: 3,
                       transition: 'width 600ms ease',
                     }}
@@ -488,7 +554,7 @@ export default function CortexAmbientPage() {
                             style={{
                               height: '100%',
                               width: `${Math.min(100, ap)}%`,
-                              background: 'linear-gradient(90deg, #ffb27a, #ff6a10)',
+                              background: 'linear-gradient(90deg, #d4af37, #f5c518)',
                               borderRadius: 2,
                               transition: 'width 600ms ease',
                             }}
@@ -572,7 +638,7 @@ export default function CortexAmbientPage() {
                   {ch.length > 1 && (
                     <polyline
                       points={`0,${H - 4} ${pts} ${W},${H - 4}`}
-                      fill="rgba(255,178,122,0.07)"
+                      fill="rgba(212,175,55,0.08)"
                       stroke="none"
                     />
                   )}
@@ -580,10 +646,11 @@ export default function CortexAmbientPage() {
                   <polyline
                     points={pts}
                     fill="none"
-                    stroke="#ff9a4a"
+                    stroke="#d4af37"
                     strokeWidth={1.5}
                     strokeLinejoin="round"
                     strokeLinecap="round"
+                    style={{ transition: 'stroke 400ms ease' }}
                   />
                 </svg>
                 {/* x-axis labels */}
@@ -644,7 +711,7 @@ export default function CortexAmbientPage() {
                     <circle
                       cx={cx} cy={cy} r={r}
                       fill="none"
-                      stroke="#ffb27a"
+                      stroke="#d4af37"
                       strokeWidth={sw}
                       strokeDasharray={dashArr}
                       strokeDashoffset={0}
@@ -851,8 +918,9 @@ export default function CortexAmbientPage() {
                         fontFamily: MONO_FONT,
                         fontSize: 12,
                         textAlign: 'center',
-                        color: fired ? '#ffb27a' : 'rgba(255,255,255,0.18)',
+                        color: fired ? '#d4af37' : 'rgba(255,255,255,0.18)',
                         fontVariantNumeric: 'tabular-nums',
+                        transition: 'color 300ms ease',
                       }}
                     >
                       {fired ? '■' : '·'}
@@ -1034,9 +1102,10 @@ export default function CortexAmbientPage() {
           forkCount={runningCount}
         />
 
+        {/* Part C: overflow: hidden — ChatLog manages its own inner scroll; no outer scrollbox */}
         <div
-          className="ambient-chat-region ambient-chatlog-scroll"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
+          className="ambient-chat-region"
+          style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
         >
           <ChatLog />
         </div>
@@ -1761,6 +1830,75 @@ export default function CortexAmbientPage() {
         @keyframes all-clear-pulse {
           0%, 100% { opacity: 0.55; text-shadow: 0 0 4px rgba(34,197,94,0.3); }
           50%      { opacity: 1;    text-shadow: 0 0 10px rgba(34,197,94,0.8); }
+        }
+
+        /* Phase 8: movement animations */
+
+        /* Activity dot pulse — for LIVE/CONNECTED indicators */
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; }
+          50%      { opacity: 0.35; }
+        }
+
+        /* Value flash — brief gold-to-bright-yellow scale on metric update */
+        @keyframes value-flash {
+          0%   { color: rgba(212,175,55,0.9); transform: scale(1); }
+          40%  { color: #f5c518;              transform: scale(1.06); }
+          100% { color: rgba(212,175,55,0.9); transform: scale(1); }
+        }
+
+        /* Slide-in-up — new list entries (forks, chat messages, signals) */
+        @keyframes slide-in-up {
+          from { opacity: 0; transform: translateY(7px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Slide-in-right — right-rail panel entries */
+        @keyframes slide-in-right {
+          from { opacity: 0; transform: translateX(8px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Shimmer — loading skeleton for panels awaiting data */
+        @keyframes shimmer {
+          0%   { background-position: -200% 0; }
+          100% { background-position:  200% 0; }
+        }
+        .ambient-shimmer {
+          background: linear-gradient(90deg,
+            rgba(212,175,55,0.04) 25%,
+            rgba(212,175,55,0.10) 50%,
+            rgba(212,175,55,0.04) 75%
+          );
+          background-size: 200% 100%;
+          animation: shimmer 1.8s ease-in-out infinite;
+          border-radius: 3px;
+        }
+
+        /* Row flash — background pulse on data update */
+        @keyframes row-flash {
+          0%   { background: rgba(212,175,55,0.12); }
+          100% { background: transparent; }
+        }
+
+        /* Fork tag entry animation */
+        .fork-tag-enter {
+          animation: slide-in-up 200ms cubic-bezier(0.4,0,0.2,1) both;
+        }
+
+        /* Chat message entry */
+        .ambient-msg-enter {
+          animation: slide-in-up 250ms cubic-bezier(0.4,0,0.2,1) both;
+        }
+
+        /* Right-rail row entry */
+        .ambient-row-enter {
+          animation: slide-in-right 180ms cubic-bezier(0.4,0,0.2,1) both;
+        }
+
+        /* Chip hover — subtle lift */
+        .ambient-chip:hover {
+          background: rgba(212,175,55,0.04);
         }
 
         /* StripRow hidden on desktop — right rail provides the same info */
