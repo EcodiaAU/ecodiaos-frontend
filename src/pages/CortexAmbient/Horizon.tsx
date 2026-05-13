@@ -23,7 +23,6 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useOSSessionStore } from '@/store/osSessionStore'
-import api from '@/api/client'
 import { AMBIENT_PALETTE } from './palette'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -50,12 +49,6 @@ interface Pip {
   x: number          // 0-W
   type: 'spawn' | 'done'
   createdAt: number  // performance.now()
-}
-
-interface CounterData {
-  forkCount: number
-  tokPerTurn: number | null
-  costPerTurn: number | null
 }
 
 // ── Mode encoding ─────────────────────────────────────────────────────────────
@@ -139,30 +132,17 @@ function buildSecondaryPath(phase: number, forks: number): string {
   return d
 }
 
-// ── Format helpers ────────────────────────────────────────────────────────────
-
-function fmtTok(n: number | null): string {
-  if (n === null || n === 0) return '—'
-  if (n >= 1000) return `${Math.round(n / 100) / 10}k`
-  return String(Math.round(n))
-}
-
-function fmtCost(n: number | null): string {
-  if (n === null || n === 0) return '—'
-  return `$${n.toFixed(4)}`
-}
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface HorizonProps {
   runningForks: number
-  tokPerTurn?: number | null
-  costPerTurn?: number | null
+  /** Override rendered height (default 30). Used when Horizon fills a merged header row. */
+  height?: number
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps) {
+export function Horizon({ runningForks, height: renderHeight = 30 }: HorizonProps) {
   const mainPathRef = useRef<SVGPathElement | null>(null)
   const secPathRef  = useRef<SVGPathElement | null>(null)
   const stateRef    = useRef<FrameState>({
@@ -201,58 +181,6 @@ export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps)
     }
     prevForksRef.current = runningForks
   }, [runningForks, addPip])
-
-  // ── Counter overlay state ────────────────────────────────────────────────────
-  // Sourced from props (parent already polls /api/ops/metrics). Falls back to
-  // a local 30s poll if props not passed.
-  const [counter, setCounter] = useState<CounterData>({
-    forkCount:  runningForks,
-    tokPerTurn: tokPerTurn ?? null,
-    costPerTurn: costPerTurn ?? null,
-  })
-
-  // Keep fork count in sync with prop
-  useEffect(() => {
-    setCounter((c) => ({ ...c, forkCount: runningForks }))
-  }, [runningForks])
-
-  // Sync tok/cost from props when parent provides them
-  useEffect(() => {
-    if (tokPerTurn !== undefined || costPerTurn !== undefined) {
-      setCounter((c) => ({
-        ...c,
-        tokPerTurn:  tokPerTurn  ?? c.tokPerTurn,
-        costPerTurn: costPerTurn ?? c.costPerTurn,
-      }))
-    }
-  }, [tokPerTurn, costPerTurn])
-
-  // Fallback: if parent doesn't supply tok/cost, poll ourselves every 30s
-  useEffect(() => {
-    if (tokPerTurn !== undefined && costPerTurn !== undefined) return // parent handles it
-    let cancelled = false
-    let timer: number
-
-    const tick = async () => {
-      try {
-        const { data } = await api.get('/ops/metrics')
-        if (cancelled) return
-        const te = data?.turn_economics ?? {}
-        setCounter((c) => ({
-          ...c,
-          tokPerTurn:  te.tokens_per_turn_avg ?? c.tokPerTurn,
-          costPerTurn: te.cost_per_turn_usd_24h ?? c.costPerTurn,
-        }))
-      } catch { /* ignore */ }
-      if (!cancelled) timer = window.setTimeout(tick, 30_000)
-    }
-
-    tick()
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [tokPerTurn, costPerTurn])
 
   // ── Mode selection ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -308,20 +236,14 @@ export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps)
   // ── Secondary path opacity ───────────────────────────────────────────────────
   const secOpacity = runningForks === 0 ? 0 : Math.min(0.45, 0.12 + runningForks * 0.11)
 
-  // ── Counter visibility ───────────────────────────────────────────────────────
-  const showCounter = counter.forkCount > 0 || counter.tokPerTurn !== null || counter.costPerTurn !== null
-
   return (
     <div
       aria-hidden
       className="ambient-horizon"
       style={{
         position: 'relative',
-        height: 30,
-        background: 'rgba(6,7,10,0.94)',
-        borderBottom: `1px solid rgba(255,178,122,0.10)`,
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
+        height: renderHeight,
+        background: 'transparent',
         overflow: 'hidden',
       }}
     >
@@ -373,31 +295,7 @@ export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps)
         ))}
       </svg>
 
-      {/* ── Right-side counter overlay ── */}
-      {showCounter && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-            fontSize: 10,
-            color: 'rgba(255,255,255,0.38)',
-            letterSpacing: '0.04em',
-            fontVariantNumeric: 'tabular-nums',
-            pointerEvents: 'none',
-            userSelect: 'none',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {counter.forkCount > 0 ? `${counter.forkCount} fork${counter.forkCount !== 1 ? 's' : ''}` : ''}
-          {counter.forkCount > 0 && (counter.tokPerTurn !== null || counter.costPerTurn !== null) ? '  ·  ' : ''}
-          {counter.tokPerTurn !== null ? `${fmtTok(counter.tokPerTurn)} tok` : ''}
-          {counter.tokPerTurn !== null && counter.costPerTurn !== null ? '  ·  ' : ''}
-          {counter.costPerTurn !== null ? `${fmtCost(counter.costPerTurn)}/turn` : ''}
-        </div>
-      )}
+      {/* Counter overlay removed — info now in header stat chips */}
 
       {/* ── CRT scan line ── */}
       <div
@@ -423,7 +321,7 @@ export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps)
         }
         @keyframes horizon-crt-scan {
           0%   { top: -1px; }
-          100% { top: 31px; }
+          100% { top: ${renderHeight + 1}px; }
         }
       `}</style>
     </div>

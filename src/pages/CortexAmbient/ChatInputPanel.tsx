@@ -106,7 +106,7 @@ export function ChatInputPanel() {
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
-  const [hasFocused, setHasFocused] = useState(false)
+  const [_hasFocused, setHasFocused] = useState(false)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -333,13 +333,6 @@ export function ChatInputPanel() {
             <RecordingRibbon active={isRecording} />
           </div>
 
-          {/* Affordance row */}
-          <div className="mt-1.5 flex items-center justify-between px-1 text-[9px] uppercase tracking-[0.2em] text-white/25 select-none">
-            <span style={{ opacity: hasFocused ? 0.55 : 1, transition: 'opacity 360ms ease-out' }}>
-              <Kbd>⌘K</Kbd> focus &middot; <Kbd>↵</Kbd> send &middot; <Kbd>⇧↵</Kbd> newline
-            </span>
-            <span><Kbd>⌃ .</Kbd> audio</span>
-          </div>
         </form>
       </div>
     </div>
@@ -690,14 +683,6 @@ function SpinnerGlyph({ color }: { color?: string } = {}) {
   )
 }
 
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-block px-1 py-px rounded-sm border border-white/10 bg-white/5 mx-0.5"
-      style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", letterSpacing: '0.04em' }}>
-      {children}
-    </span>
-  )
-}
 
 function StreamingRibbon({ active }: { active: boolean }) {
   return (

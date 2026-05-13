@@ -55,6 +55,10 @@ export interface OpsMetrics {
   energy_by_account: EnergyByAccount
   status_priorities: StatusPriorities
   status_total: number
+  // process state (from state.conductor_uptime_sec)
+  uptime_sec: number | null
+  // client-measured API round-trip latency (ms)
+  last_response_ms: number | null
 }
 
 const EMPTY: OpsMetrics = {
@@ -73,6 +77,8 @@ const EMPTY: OpsMetrics = {
   },
   status_priorities: { P1: 0, P2: 0, P3: 0, P4: 0, P5: 0 },
   status_total: 0,
+  uptime_sec: null,
+  last_response_ms: null,
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -86,7 +92,9 @@ export function useOpsMetrics(pollMs = 60_000): OpsMetrics {
 
     const tick = async () => {
       try {
+        const t0 = Date.now()
         const { data } = await api.get('/ops/metrics')
+        const responseMs = Date.now() - t0
         if (cancelled) return
 
         const te = data?.turn_economics ?? {}
@@ -140,6 +148,8 @@ export function useOpsMetrics(pollMs = 60_000): OpsMetrics {
             P5: Number(p.P5 ?? 0),
           },
           status_total: total,
+          uptime_sec: data?.state?.conductor_uptime_sec ?? null,
+          last_response_ms: responseMs,
         })
       } catch {
         // leave previous state intact on transient error

@@ -58,6 +58,17 @@ function formatAge(isoString: string | null | undefined): string {
   return `${Math.floor(seconds / 86400)}d`
 }
 
+// ── Uptime formatting ────────────────────────────────────────────────────────
+function formatUptime(sec: number | null): string {
+  if (sec == null) return '—'
+  if (sec < 60) return `${sec}s`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`
+  const h = Math.floor(sec / 3600)
+  const d = Math.floor(sec / 86400)
+  if (d >= 1) return `${d}d${String(h % 24).padStart(2, '0')}h`
+  return `${h}h${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m`
+}
+
 // ── Shared style primitives ─────────────────────────────────────────────────
 const MONO_FONT = "'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace"
 const SANS_FONT = "'Inter', system-ui, sans-serif"
@@ -66,7 +77,7 @@ const ROW: React.CSSProperties = {
   display: 'flex',
   alignItems: 'flex-start',
   gap: 8,
-  padding: '7px 12px',
+  padding: '5px 10px',
   borderBottom: '1px solid rgba(255,178,122,0.04)',
 }
 const TEXT_PRIMARY: React.CSSProperties = {
@@ -214,12 +225,12 @@ export default function CortexAmbientPage() {
     <div
       className="ambient-root"
       style={{
-        position: 'absolute',
+        position: 'fixed',
         inset: 0,
         background: AMBIENT_PALETTE.base,
         color: AMBIENT_PALETTE.text,
         display: 'grid',
-        gridTemplateRows: '30px 52px 1fr',
+        gridTemplateRows: '44px 1fr',
         gridTemplateColumns: '220px 1fr 400px',
         height: '100vh',
         overflow: 'hidden',
@@ -237,16 +248,7 @@ export default function CortexAmbientPage() {
         }}
       />
 
-      {/* ── ROW 1: Horizon band — spans all three columns ──────────────────── */}
-      <div style={{ gridColumn: '1 / -1', gridRow: 1 }}>
-        <Horizon
-          runningForks={runningCount}
-          tokPerTurn={opsMetrics.cost_per_turn_usd_24h !== null ? undefined : null}
-          costPerTurn={opsMetrics.cost_per_turn_usd_24h}
-        />
-      </div>
-
-      {/* ── ROW 2: Stat strip — full width ──────────────────────────────────── */}
+      {/* ── ROW 1: Combined header — Horizon background + stat chips ─────────── */}
       {(() => {
         const burnLabel = opsMetrics.cost_usd_24h > 0
           ? `$${opsMetrics.cost_usd_24h.toFixed(3)}`
@@ -255,7 +257,7 @@ export default function CortexAmbientPage() {
         const p1 = opsMetrics.status_priorities.P1
         const CHIP: React.CSSProperties = {
           display: 'flex', flexDirection: 'column', justifyContent: 'center',
-          gap: 2, padding: '0 14px',
+          gap: 2, padding: '0 10px',
           borderRight: '1px solid rgba(255,178,122,0.06)',
         }
         const LBL: React.CSSProperties = {
@@ -270,13 +272,27 @@ export default function CortexAmbientPage() {
         return (
           <div
             style={{
-              gridColumn: '1 / -1', gridRow: 2,
-              display: 'flex', alignItems: 'stretch',
+              gridColumn: '1 / -1', gridRow: 1,
+              position: 'relative',
               borderBottom: '1px solid rgba(255,178,122,0.08)',
               background: 'rgba(0,0,0,0.30)',
               overflow: 'hidden',
             }}
           >
+            {/* Horizon oscilloscope as absolute background */}
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
+              <Horizon
+                runningForks={runningCount}
+                height={44}
+              />
+            </div>
+            {/* Chips row, floats above oscilloscope */}
+            <div
+              style={{
+                position: 'relative', zIndex: 1,
+                display: 'flex', alignItems: 'stretch', height: '100%',
+              }}
+            >
             <div style={CHIP}>
               <span style={LBL}>BURN / 24h</span>
               <span style={VAL}>{burnLabel}</span>
@@ -329,7 +345,49 @@ export default function CortexAmbientPage() {
                   : '—'}
               </span>
             </div>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 14px', gap: 14 }}>
+            <div style={CHIP}>
+              <span style={LBL}>UPTIME</span>
+              <span style={{ ...VAL, fontSize: 13 }}>{formatUptime(opsMetrics.uptime_sec)}</span>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>THREADS</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                <span style={{ ...VAL, color: activeCount > 0 ? '#ffb27a' : 'rgba(255,255,255,0.88)' }}>
+                  {activeCount}
+                </span>
+                {blockedCount > 0 && (
+                  <span style={{ fontFamily: MONO_FONT, fontSize: 9, color: '#6366f1' }}>
+                    +{blockedCount}b
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>OBSV</span>
+              <span style={{
+                ...VAL,
+                color: unackedCount > 0 ? '#f59e0b' : 'rgba(255,255,255,0.88)',
+                opacity: unackedCount > 0 && blinkOn ? 1 : undefined,
+              }}>
+                {signals.length}
+              </span>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>INBOX</span>
+              <span style={{
+                ...VAL,
+                color: inboxIsUrgent ? '#ef4444' : inboxTotal > 0 ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.35)',
+              }}>
+                {inboxTotal}
+              </span>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>LAT</span>
+              <span style={{ ...VAL, fontSize: 13 }}>
+                {opsMetrics.last_response_ms != null ? `${opsMetrics.last_response_ms}ms` : '—'}
+              </span>
+            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', gap: 14 }}>
               <span style={{
                 fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.12em',
                 color: blinkOn ? '#22c55e' : 'rgba(34,197,94,0.25)',
@@ -341,15 +399,16 @@ export default function CortexAmbientPage() {
                 EOS{'\xB7'}CORTEX
               </span>
             </div>
+            </div>{/* end chips-row */}
           </div>
         )
       })()}
 
-      {/* ── ROW 3, COL 1: Left rail ─────────────────────────────────────────── */}
+      {/* ── ROW 2, COL 1: Left rail ─────────────────────────────────────────── */}
       <div
         data-rail="left"
         style={{
-          gridRow: 3,
+          gridRow: 2,
           gridColumn: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -378,7 +437,7 @@ export default function CortexAmbientPage() {
               maxHeight={230}
               defaultCollapsed={false}
             >
-              <div style={{ padding: '10px 12px 8px' }}>
+              <div style={{ padding: '6px 10px 5px' }}>
                 {/* total gauge */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                   <span style={{ ...MONO_CELL, fontSize: 10 }}>WEEKLY BUDGET</span>
@@ -478,7 +537,7 @@ export default function CortexAmbientPage() {
               maxHeight={160}
               defaultCollapsed={false}
             >
-              <div style={{ padding: '8px 12px 10px' }}>
+              <div style={{ padding: '6px 10px 6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontFamily: MONO_FONT, fontSize: 12, color: 'rgba(255,255,255,0.82)', fontVariantNumeric: 'tabular-nums' }}>
                     {avgLabel}
@@ -559,7 +618,7 @@ export default function CortexAmbientPage() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 16,
-                  padding: '10px 12px',
+                  padding: '6px 10px',
                 }}
               >
                 {/* donut */}
@@ -641,7 +700,7 @@ export default function CortexAmbientPage() {
               maxHeight={200}
               defaultCollapsed={true}
             >
-              <div style={{ padding: '8px 12px 10px' }}>
+              <div style={{ padding: '6px 10px 6px' }}>
                 {rows.map(({ key, label, color }) => {
                   const cnt = sp[key]
                   const barPct = Math.round((cnt / maxCount) * 100)
@@ -950,10 +1009,10 @@ export default function CortexAmbientPage() {
         </Panel>
       </div>
 
-      {/* ── ROW 3, COL 2: Chat column ────────────────────────────────────────── */}
+      {/* ── ROW 2, COL 2: Chat column ────────────────────────────────────────── */}
       <div
         style={{
-          gridRow: 3,
+          gridRow: 2,
           gridColumn: 2,
           display: 'flex',
           flexDirection: 'column',
@@ -982,11 +1041,11 @@ export default function CortexAmbientPage() {
         <Footer />
       </div>
 
-      {/* ── ROW 3, COL 3: Right rail (400px) ────────────────────────────────── */}
+      {/* ── ROW 2, COL 3: Right rail (400px) ────────────────────────────────── */}
       <div
         data-rail="right"
         style={{
-          gridRow: 3,
+          gridRow: 2,
           gridColumn: 3,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -1401,7 +1460,7 @@ export default function CortexAmbientPage() {
                 display: 'grid',
                 gridTemplateColumns: '140px 80px 1fr',
                 gap: 8,
-                padding: '7px 12px',
+                padding: '5px 10px',
                 borderBottom: '1px solid rgba(255,178,122,0.04)',
                 alignItems: 'center',
               }}
@@ -1454,7 +1513,7 @@ export default function CortexAmbientPage() {
                 display: 'grid',
                 gridTemplateColumns: '140px 80px 1fr',
                 gap: 8,
-                padding: '7px 12px',
+                padding: '5px 10px',
                 alignItems: 'center',
               }}
             >
@@ -1593,66 +1652,6 @@ export default function CortexAmbientPage() {
                   </div>
                 ))
               )}
-            </Panel>
-          )
-        })()}
-
-        {/* ───────────────────────────────────────────────────────────────── */}
-        {/* Panel 8R: TOKEN FLOW — 24h API throughput sparkline (green)       */}
-        {/* ───────────────────────────────────────────────────────────────── */}
-        {(() => {
-          const ch = opsMetrics.cost_hourly
-          // Estimate tokens from cost (~$3 per 1M tokens avg)
-          const TOK_PER_USD = 333_333
-          const tokBuckets = ch.map((b) => Math.round(b.cost_usd * TOK_PER_USD))
-          const maxTok = Math.max(...tokBuckets, 1)
-          const totalTok = tokBuckets.reduce((s, t) => s + t, 0)
-
-          const W2 = 370, H2 = 38
-          const pts = tokBuckets.length > 1
-            ? tokBuckets.map((t, i) => {
-                const x = (i / (tokBuckets.length - 1)) * W2
-                const y = H2 - 4 - (t / maxTok) * (H2 - 8)
-                return `${x.toFixed(1)},${y.toFixed(1)}`
-              }).join(' ')
-            : `0,${H2 - 4} ${W2},${H2 - 4}`
-
-          const fmtK = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n)
-
-          return (
-            <Panel
-              id="tokflow"
-              label="TOK FLOW"
-              count={totalTok > 0 ? `~${fmtK(totalTok)}/24h` : 'no data'}
-              pulse={false}
-              maxHeight={90}
-              defaultCollapsed={false}
-            >
-              <div style={{ padding: '7px 10px 5px' }}>
-                <svg
-                  width={W2} height={H2}
-                  viewBox={`0 0 ${W2} ${H2}`}
-                  style={{ display: 'block', overflow: 'visible' }}
-                >
-                  <line x1={0} y1={H2 - 4} x2={W2} y2={H2 - 4}
-                    stroke="rgba(34,197,94,0.10)" strokeWidth={1} />
-                  {tokBuckets.length > 1 && (
-                    <polyline
-                      points={`0,${H2 - 4} ${pts} ${W2},${H2 - 4}`}
-                      fill="rgba(34,197,94,0.07)" stroke="none"
-                    />
-                  )}
-                  <polyline
-                    points={pts} fill="none"
-                    stroke="#22c55e" strokeWidth={1.5}
-                    strokeLinejoin="round" strokeLinecap="round"
-                  />
-                </svg>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-                  <span style={{ ...MONO_CELL, fontSize: 9 }}>-24h</span>
-                  <span style={{ ...MONO_CELL, fontSize: 9 }}>now</span>
-                </div>
-              </div>
             </Panel>
           )
         })()}
