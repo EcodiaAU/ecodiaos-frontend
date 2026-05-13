@@ -399,11 +399,26 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   appendStreamText: (text) => {
+    // DEBUG (stream-dedup-trace 2026-05-13): log every append to diagnose
+    // the doubled-text bug. Tag with caller via console.trace would be
+    // noisy — instead each WS handler at the call site logs its own tag.
+    try {
+      const cur = useOSSessionStore.getState().streamText.length + _streamTextBuffer.length
+      const head = text.length > 40 ? text.slice(0, 40) + '…' : text
+      // eslint-disable-next-line no-console
+      console.log('[stream-trace] appendStreamText', { len: text.length, curBefore: cur, head: JSON.stringify(head) })
+    } catch { /* noop */ }
     _streamTextBuffer += text
     scheduleFlush()
   },
 
   replaceStreamText: (text) => {
+    try {
+      const cur = useOSSessionStore.getState().streamText.length + _streamTextBuffer.length
+      const head = text.length > 40 ? text.slice(0, 40) + '…' : text
+      // eslint-disable-next-line no-console
+      console.log('[stream-trace] replaceStreamText', { len: text.length, curBefore: cur, head: JSON.stringify(head) })
+    } catch { /* noop */ }
     set({ streamText: text })
   },
 

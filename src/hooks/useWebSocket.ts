@@ -106,6 +106,8 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   if (type === 'text_delta' && content) {
     bumpSeq(c.seq)
     if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
+    // eslint-disable-next-line no-console
+    console.log('[stream-trace] WS:text_delta seq=', c.seq)
     osStore.appendStreamText(content)
     return
   }
@@ -119,6 +121,8 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
     if (osStore.status !== 'streaming') return
     flushStreamBuffersSync()
     const effectiveLen = getEffectiveStreamTextLength()
+    // eslint-disable-next-line no-console
+    console.log('[stream-trace] WS:assistant_text seq=', c.seq, 'contentLen=', content.length, 'effectiveLen=', effectiveLen, 'willReplace=', content.length > effectiveLen)
     if (content.length > effectiveLen) {
       osStore.replaceStreamText(content)
     }
@@ -318,6 +322,8 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
       if (parsed.type === 'assistant' && parsed.message?.content) {
         for (const block of parsed.message.content) {
           if (block.type === 'text' && block.text) {
+            // eslint-disable-next-line no-console
+            console.log('[stream-trace] WS:legacy-stream/assistant.text')
             osStore.appendStreamText(block.text)
           }
           if (block.type === 'tool_use') {
@@ -326,6 +332,8 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
         }
       }
       if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+        // eslint-disable-next-line no-console
+        console.log('[stream-trace] WS:legacy-stream/content_block_delta')
         osStore.appendStreamText(parsed.delta.text)
       }
     } catch { /* not JSON */ }
@@ -352,6 +360,8 @@ function replayRecoveredEvents(events: Array<{ seq: number; type: string; data?:
     // envelope is { seq, ts, type, sessionId?, data? } — we only apply
     // os-session:output chunks via replay here, matching the live handler.
     if (ev.type === 'os-session:output') {
+      // eslint-disable-next-line no-console
+      console.log('[stream-trace] REPLAY:output seq=', ev.seq)
       applyOSOutputChunk(ev.data)
     } else if (ev.type === 'os-session:status') {
       // Status is idempotent; just apply to the store.
