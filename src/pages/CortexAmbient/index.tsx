@@ -46,6 +46,8 @@ import { useSchedulerHeatmap } from './useSchedulerHeatmap'
 import { useShipBoard } from './useShipBoard'
 import { useKvStoreRecent } from './useKvStoreRecent'
 import { AMBIENT_PALETTE } from './palette'
+import { NotesPanel } from './NotesPanel'
+import { useNotes } from './useNotes'
 
 // ── Age formatting ──────────────────────────────────────────────────────────
 function formatAge(isoString: string | null | undefined): string {
@@ -186,6 +188,10 @@ export default function CortexAmbientPage() {
   // blinkOn removed (Phase 10 perf): blink effects now use CSS animation pulse-dot
   // ccSessions removed (Phase 10): SESSIONS panel deleted per Tate feedback
 
+  // Phase 11: Haiku observer notes
+  const { notes, newCount: notesNewCount } = useNotes(8)
+  const notesFlash = useFlash(notes)
+
   // Phase 9 H4: solar disc pulses for 1.1s when firedCount1h increments
   const [cronFiring, setCronFiring] = useState(false)
   const prevFiredRef = useRef(0)
@@ -298,7 +304,6 @@ export default function CortexAmbientPage() {
         const CHIP: React.CSSProperties = {
           display: 'flex', flexDirection: 'column', justifyContent: 'center',
           gap: 2, padding: '0 10px',
-          borderRight: '1px solid rgba(212,175,55,0.09)',
           transition: 'background 150ms ease',
         }
         const LBL: React.CSSProperties = {
@@ -323,6 +328,7 @@ export default function CortexAmbientPage() {
           >
             {/* Chips row — Horizon lives inside its own chip, not as a backdrop */}
             <div
+              data-chip-strip=""
               style={{
                 display: 'flex', alignItems: 'stretch', height: '100%',
               }}
@@ -1831,6 +1837,30 @@ export default function CortexAmbientPage() {
             </Panel>
           )
         })()}
+
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* Panel 10R: NOTES — Haiku observer ambient notes (Phase 11)         */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            transition: 'box-shadow 200ms ease',
+            boxShadow: notesFlash && notes.length > 0
+              ? '0 0 0 1px rgba(212,175,55,0.4)'
+              : 'none',
+            borderRadius: 6,
+          }}
+        >
+          <Panel
+            id="notes"
+            label="NOTES"
+            count={notes.length > 0 ? String(notes.length) : ''}
+            pulse={notesNewCount > 0}
+            maxHeight={320}
+            defaultCollapsed={false}
+          >
+            <NotesPanel />
+          </Panel>
+        </div>
       </div>
 
       {/* ── Page-local keyframes ────────────────────────────────────────────── */}
@@ -1935,6 +1965,17 @@ export default function CortexAmbientPage() {
         .ambient-chip:hover {
           background: rgba(212,175,55,0.04);
         }
+
+        /* Phase 11: border-merge cohesion pass */
+        /* Chip strip: shared single divider between adjacent chips */
+        [data-chip-strip] > *:not(:first-child) {
+          border-left: 1px solid rgba(212,175,55,0.09);
+        }
+        /* Rail panels: collapse inter-panel gap, overlap borders for one shared line */
+        [data-rail="left"] > * { margin-bottom: 0 !important; }
+        [data-rail="left"] > * + * { margin-top: -1px; }
+        [data-rail="right"] > * { margin-bottom: 0 !important; }
+        [data-rail="right"] > * + * { margin-top: -1px; }
 
         /* StripRow hidden on desktop — right rail provides the same info */
         @media (min-width: 1280px) {
