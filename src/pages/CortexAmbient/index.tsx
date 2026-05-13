@@ -41,6 +41,7 @@ import { useObserverSignals } from './useObserverSignals'
 import { usePerceptionBus } from './usePerceptionBus'
 import { useRestartRequests } from './useRestartRequests'
 import { useInboxCounts } from './useInboxCounts'
+import { useOpsMetrics } from './useOpsMetrics'
 import { AMBIENT_PALETTE } from './palette'
 
 // ── Age formatting ──────────────────────────────────────────────────────────
@@ -159,6 +160,9 @@ export default function CortexAmbientPage() {
   const { requests: restartRequests, count: restartCount } = useRestartRequests()
   const { tate: inboxTate, code: inboxCode, total: inboxTotal } = useInboxCounts()
 
+  // Phase 3: left rail metrics
+  const opsMetrics = useOpsMetrics()
+
   // Flash states
   const observerFlash = useFlash(signals)
   const perceptionFlash = useFlash(perceptionEvents)
@@ -221,19 +225,369 @@ export default function CortexAmbientPage() {
           borderRight: '1px solid rgba(255,178,122,0.06)',
         }}
       >
-        <div
-          style={{
-            fontSize: 9,
-            color: 'rgba(255,255,255,0.2)',
-            letterSpacing: '0.2em',
-            textAlign: 'center',
-            padding: '16px 0',
-            textTransform: 'uppercase',
-            fontFamily: SANS_FONT,
-          }}
-        >
-          panels coming in phase 3
-        </div>
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 7: ENERGY BUDGET — weekly token gauge per account  */}
+        {/* ─────────────────────────────────────────────────────── */}
+        {(() => {
+          const ea = opsMetrics.energy_by_account
+          const pctPct = Math.round(ea.pct_used * 100)
+          const fmtTok = (n: number) =>
+            n >= 1e9
+              ? `${(n / 1e9).toFixed(1)}B`
+              : n >= 1e6
+              ? `${(n / 1e6).toFixed(0)}M`
+              : `${n.toLocaleString()}`
+          return (
+            <Panel
+              id="energy"
+              label="ENERGY"
+              count={`${pctPct}% used`}
+              pulse={false}
+              maxHeight={230}
+              defaultCollapsed={false}
+            >
+              <div style={{ padding: '10px 12px 8px' }}>
+                {/* total gauge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <span style={{ ...MONO_CELL, fontSize: 10 }}>WEEKLY BUDGET</span>
+                  <span style={{ fontFamily: MONO_FONT, fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.75)' }}>
+                    {pctPct}%
+                  </span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,178,122,0.08)', overflow: 'hidden', marginBottom: 12 }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.min(100, pctPct)}%`,
+                      background: 'linear-gradient(90deg, #ffb27a, #ff6a10)',
+                      borderRadius: 3,
+                      transition: 'width 600ms ease',
+                    }}
+                  />
+                </div>
+                {/* per-account rows */}
+                {ea.accounts.length === 0 ? (
+                  <div style={{ ...MONO_CELL, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>
+                    no usage data yet
+                  </div>
+                ) : (
+                  ea.accounts.map((acc) => {
+                    const ap = Math.round(acc.pct_of_budget * 100)
+                    return (
+                      <div key={acc.provider} style={{ marginBottom: 9 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                          <span style={{ fontFamily: MONO_FONT, fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>
+                            {acc.label}
+                          </span>
+                          <span style={{ ...MONO_CELL, fontVariantNumeric: 'tabular-nums', fontSize: 10 }}>
+                            {ap}% · {fmtTok(acc.total_tokens)} tok
+                          </span>
+                        </div>
+                        <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,178,122,0.08)', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${Math.min(100, ap)}%`,
+                              background: 'linear-gradient(90deg, #ffb27a, #ff6a10)',
+                              borderRadius: 2,
+                              transition: 'width 600ms ease',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <div style={{ marginTop: 6, ...MONO_CELL, fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                  {fmtTok(ea.total_tokens_this_week)} / 20B tok this week
+                </div>
+              </div>
+            </Panel>
+          )
+        })()}
+
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 8: COST PER TURN — 24h SVG sparkline              */}
+        {/* ─────────────────────────────────────────────────────── */}
+        {(() => {
+          const ch = opsMetrics.cost_hourly
+          const avgLabel = opsMetrics.cost_per_turn_usd_24h != null
+            ? `$${opsMetrics.cost_per_turn_usd_24h.toFixed(4)}/turn`
+            : 'no data'
+          const weekTotal = opsMetrics.cost_usd_this_week
+          const weekLabel = weekTotal > 0 ? `$${weekTotal.toFixed(2)} this week` : ''
+
+          // SVG sparkline geometry
+          const W = 196, H = 46
+          const maxVal = Math.max(...ch.map((b) => b.cost_usd), 0.000001)
+          const pts = ch.length > 1
+            ? ch.map((b, i) => {
+                const x = (i / (ch.length - 1)) * W
+                const y = H - 4 - (b.cost_usd / maxVal) * (H - 8)
+                return `${x.toFixed(1)},${y.toFixed(1)}`
+              }).join(' ')
+            : `0,${H - 4} ${W},${H - 4}` // flat line fallback
+
+          // Hour labels: 00, 06, 12, 18, now
+          const now = new Date()
+          const hourLabels = [
+            `${String(new Date(now.getTime() - 18 * 3600000).getHours()).padStart(2,'0')}h`,
+            `${String(new Date(now.getTime() - 12 * 3600000).getHours()).padStart(2,'0')}h`,
+            `${String(new Date(now.getTime() - 6 * 3600000).getHours()).padStart(2,'0')}h`,
+            'now',
+          ]
+
+          return (
+            <Panel
+              id="cost"
+              label="COST"
+              count={avgLabel}
+              pulse={false}
+              maxHeight={160}
+              defaultCollapsed={false}
+            >
+              <div style={{ padding: '8px 12px 10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontFamily: MONO_FONT, fontSize: 12, color: 'rgba(255,255,255,0.82)', fontVariantNumeric: 'tabular-nums' }}>
+                    {avgLabel}
+                  </span>
+                  {weekLabel && (
+                    <span style={{ ...MONO_CELL, fontSize: 10 }}>{weekLabel}</span>
+                  )}
+                </div>
+                {/* sparkline */}
+                <svg
+                  width={W}
+                  height={H}
+                  viewBox={`0 0 ${W} ${H}`}
+                  style={{ display: 'block', overflow: 'visible' }}
+                >
+                  {/* zero baseline */}
+                  <line
+                    x1={0} y1={H - 4} x2={W} y2={H - 4}
+                    stroke="rgba(255,178,122,0.08)"
+                    strokeWidth={1}
+                  />
+                  {/* cost area fill */}
+                  {ch.length > 1 && (
+                    <polyline
+                      points={`0,${H - 4} ${pts} ${W},${H - 4}`}
+                      fill="rgba(255,178,122,0.07)"
+                      stroke="none"
+                    />
+                  )}
+                  {/* cost line */}
+                  <polyline
+                    points={pts}
+                    fill="none"
+                    stroke="#ff9a4a"
+                    strokeWidth={1.5}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                {/* x-axis labels */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  {hourLabels.map((l) => (
+                    <span key={l} style={{ ...MONO_CELL, fontSize: 9 }}>{l}</span>
+                  ))}
+                </div>
+              </div>
+            </Panel>
+          )
+        })()}
+
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 9: CACHE HIT RATIO — SVG donut                   */}
+        {/* ─────────────────────────────────────────────────────── */}
+        {(() => {
+          const ratio24 = opsMetrics.cache_hit_ratio_24h
+          const ratioWk = opsMetrics.cache_hit_ratio_week
+          const displayRatio = ratio24 ?? ratioWk ?? null
+          const pct = displayRatio != null ? Math.round(displayRatio * 100) : null
+
+          // Donut geometry: r=19 centered in 56x56
+          const r = 19, cx = 28, cy = 28, sw = 8
+          const circ = 2 * Math.PI * r
+          const dashArr = displayRatio != null
+            ? `${(displayRatio * circ).toFixed(2)} ${circ.toFixed(2)}`
+            : `0 ${circ.toFixed(2)}`
+
+          return (
+            <Panel
+              id="cache"
+              label="CACHE"
+              count={pct != null ? `${pct}% hits` : 'no data'}
+              pulse={false}
+              maxHeight={120}
+              defaultCollapsed={false}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: '10px 12px',
+                }}
+              >
+                {/* donut */}
+                <svg width={56} height={56} viewBox="0 0 56 56" style={{ flexShrink: 0 }}>
+                  {/* background ring */}
+                  <circle
+                    cx={cx} cy={cy} r={r}
+                    fill="none"
+                    stroke="rgba(255,178,122,0.08)"
+                    strokeWidth={sw}
+                  />
+                  {/* hit ring */}
+                  {displayRatio != null && displayRatio > 0 && (
+                    <circle
+                      cx={cx} cy={cy} r={r}
+                      fill="none"
+                      stroke="#ffb27a"
+                      strokeWidth={sw}
+                      strokeDasharray={dashArr}
+                      strokeDashoffset={0}
+                      strokeLinecap="round"
+                      transform={`rotate(-90 ${cx} ${cy})`}
+                    />
+                  )}
+                  {/* center pct label */}
+                  <text
+                    x={cx} y={cy}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={11}
+                    fontFamily="'JetBrains Mono', ui-monospace, monospace"
+                    fill={pct != null ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.2)'}
+                    style={{ fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {pct != null ? `${pct}%` : '—'}
+                  </text>
+                </svg>
+                {/* legend */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ ...MONO_CELL, fontSize: 10 }}>24h</span>
+                    <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.82)' }}>
+                      {ratio24 != null ? `${Math.round(ratio24 * 100)}%` : '—'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ ...MONO_CELL, fontSize: 10 }}>week</span>
+                    <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.82)' }}>
+                      {ratioWk != null ? `${Math.round(ratioWk * 100)}%` : '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          )
+        })()}
+
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 10: STATUS BOARD STRIP — P1-P5 histogram          */}
+        {/* ─────────────────────────────────────────────────────── */}
+        {(() => {
+          const sp = opsMetrics.status_priorities
+          const total = opsMetrics.status_total
+          const rows: Array<{ key: keyof typeof sp; label: string; color: string }> = [
+            { key: 'P1', label: 'P1', color: '#ef4444' },
+            { key: 'P2', label: 'P2', color: '#f97316' },
+            { key: 'P3', label: 'P3', color: '#ffb27a' },
+            { key: 'P4', label: 'P4', color: 'rgba(255,255,255,0.40)' },
+            { key: 'P5', label: 'P5', color: 'rgba(255,255,255,0.25)' },
+          ]
+          const maxCount = Math.max(...rows.map((r) => sp[r.key]), 1)
+
+          return (
+            <Panel
+              id="board"
+              label="BOARD"
+              count={`${total} active`}
+              pulse={false}
+              maxHeight={200}
+              defaultCollapsed={true}
+            >
+              <div style={{ padding: '8px 12px 10px' }}>
+                {rows.map(({ key, label, color }) => {
+                  const cnt = sp[key]
+                  const barPct = Math.round((cnt / maxCount) * 100)
+                  return (
+                    <div
+                      key={key}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '22px 8px 1fr 28px',
+                        gap: 6,
+                        alignItems: 'center',
+                        marginBottom: 7,
+                      }}
+                    >
+                      {/* label */}
+                      <span style={{ fontFamily: MONO_FONT, fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
+                        {label}
+                      </span>
+                      {/* dot */}
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          background: color,
+                          boxShadow: cnt > 0 && key === 'P1' ? `0 0 6px ${color}` : 'none',
+                          display: 'inline-block',
+                          flexShrink: 0,
+                        }}
+                      />
+                      {/* bar */}
+                      <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,178,122,0.06)', overflow: 'hidden' }}>
+                        {cnt > 0 && (
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${barPct}%`,
+                              background: color,
+                              borderRadius: 2,
+                              opacity: 0.7,
+                              transition: 'width 400ms ease',
+                            }}
+                          />
+                        )}
+                      </div>
+                      {/* count */}
+                      <span
+                        style={{
+                          fontFamily: MONO_FONT,
+                          fontSize: 11,
+                          fontVariantNumeric: 'tabular-nums',
+                          color: cnt > 0 ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.2)',
+                          textAlign: 'right',
+                        }}
+                      >
+                        {cnt}
+                      </span>
+                    </div>
+                  )
+                })}
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: '1px solid rgba(255,178,122,0.06)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span style={{ ...MONO_CELL, fontSize: 10 }}>TOTAL</span>
+                  <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.75)' }}>
+                    {total}
+                  </span>
+                </div>
+              </div>
+            </Panel>
+          )
+        })()}
       </div>
 
       {/* ── ROW 2, COL 2: Chat column ────────────────────────────────────────── */}
