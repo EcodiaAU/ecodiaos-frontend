@@ -45,6 +45,7 @@ import { useOpsMetrics } from './useOpsMetrics'
 import { useSchedulerHeatmap } from './useSchedulerHeatmap'
 import { useShipBoard } from './useShipBoard'
 import { useKvStoreRecent } from './useKvStoreRecent'
+import { useCcSessions } from './useCcSessions'
 import { AMBIENT_PALETTE } from './palette'
 
 // ── Age formatting ──────────────────────────────────────────────────────────
@@ -171,6 +172,14 @@ export default function CortexAmbientPage() {
   const { deploys } = useShipBoard()
   const { writes: kvWrites } = useKvStoreRecent()
 
+  // Phase 5: right rail additional panels + blink state
+  const { sessions: ccSessions } = useCcSessions()
+  const [blinkOn, setBlinkOn] = useState(true)
+  useEffect(() => {
+    const t = setInterval(() => setBlinkOn((v) => !v), 900)
+    return () => clearInterval(t)
+  }, [])
+
   // Flash states
   const observerFlash = useFlash(signals)
   const perceptionFlash = useFlash(perceptionEvents)
@@ -210,12 +219,24 @@ export default function CortexAmbientPage() {
         background: AMBIENT_PALETTE.base,
         color: AMBIENT_PALETTE.text,
         display: 'grid',
-        gridTemplateRows: '60px 1fr',
+        gridTemplateRows: '30px 52px 1fr',
         gridTemplateColumns: '220px 1fr 400px',
         height: '100vh',
         overflow: 'hidden',
       }}
     >
+      {/* ── Scanline overlay (fixed, no pointer events) ─────────────────────── */}
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px)',
+          pointerEvents: 'none',
+          zIndex: 9998,
+        }}
+      />
+
       {/* ── ROW 1: Horizon band — spans all three columns ──────────────────── */}
       <div style={{ gridColumn: '1 / -1', gridRow: 1 }}>
         <Horizon
@@ -225,11 +246,110 @@ export default function CortexAmbientPage() {
         />
       </div>
 
-      {/* ── ROW 2, COL 1: Left rail ─────────────────────────────────────────── */}
+      {/* ── ROW 2: Stat strip — full width ──────────────────────────────────── */}
+      {(() => {
+        const burnLabel = opsMetrics.cost_usd_24h > 0
+          ? `$${opsMetrics.cost_usd_24h.toFixed(3)}`
+          : '$—'
+        const energyPct = Math.round(opsMetrics.energy_by_account.pct_used * 100)
+        const p1 = opsMetrics.status_priorities.P1
+        const CHIP: React.CSSProperties = {
+          display: 'flex', flexDirection: 'column', justifyContent: 'center',
+          gap: 2, padding: '0 14px',
+          borderRight: '1px solid rgba(255,178,122,0.06)',
+        }
+        const LBL: React.CSSProperties = {
+          fontFamily: MONO_FONT, fontSize: 8, letterSpacing: '0.18em',
+          color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const,
+        }
+        const VAL: React.CSSProperties = {
+          fontFamily: MONO_FONT, fontSize: 14,
+          fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.88)',
+          lineHeight: 1,
+        }
+        return (
+          <div
+            style={{
+              gridColumn: '1 / -1', gridRow: 2,
+              display: 'flex', alignItems: 'stretch',
+              borderBottom: '1px solid rgba(255,178,122,0.08)',
+              background: 'rgba(0,0,0,0.30)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={CHIP}>
+              <span style={LBL}>BURN / 24h</span>
+              <span style={VAL}>{burnLabel}</span>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>FORKS</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                <span style={{ ...VAL, color: runningCount > 0 ? '#22c55e' : 'rgba(255,255,255,0.88)' }}>
+                  {runningCount}
+                </span>
+                <span style={{ fontFamily: MONO_FONT, fontSize: 9, color: 'rgba(255,255,255,0.28)' }}>
+                  /{forks.length}
+                </span>
+              </div>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>BOARD</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <span style={VAL}>{opsMetrics.status_total}</span>
+                {p1 > 0 && (
+                  <span style={{
+                    fontFamily: MONO_FONT, fontSize: 9,
+                    color: '#ef4444',
+                    opacity: blinkOn ? 1 : 0.3,
+                    transition: 'opacity 0.15s',
+                  }}>
+                    P1:{p1}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>ENERGY</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={VAL}>{energyPct}%</span>
+                <div style={{ height: 4, width: 52, borderRadius: 2, background: 'rgba(255,178,122,0.10)', overflow: 'hidden', flexShrink: 0 }}>
+                  <div style={{
+                    height: '100%', width: `${Math.min(100, energyPct)}%`,
+                    background: energyPct > 80 ? '#ef4444' : energyPct > 60 ? '#f59e0b' : '#22c55e',
+                    borderRadius: 2, transition: 'width 600ms ease',
+                  }} />
+                </div>
+              </div>
+            </div>
+            <div style={CHIP}>
+              <span style={LBL}>CACHE HIT</span>
+              <span style={VAL}>
+                {opsMetrics.cache_hit_ratio_24h != null
+                  ? `${Math.round(opsMetrics.cache_hit_ratio_24h * 100)}%`
+                  : '—'}
+              </span>
+            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 14px', gap: 14 }}>
+              <span style={{
+                fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.12em',
+                color: blinkOn ? '#22c55e' : 'rgba(34,197,94,0.25)',
+                transition: 'color 0.15s',
+              }}>
+                {'●'} CONNECTED
+              </span>
+              <span style={{ fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.18)' }}>
+                EOS{'\xB7'}CORTEX
+              </span>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── ROW 3, COL 1: Left rail ─────────────────────────────────────────── */}
       <div
         data-rail="left"
         style={{
-          gridRow: 2,
+          gridRow: 3,
           gridColumn: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -830,10 +950,10 @@ export default function CortexAmbientPage() {
         </Panel>
       </div>
 
-      {/* ── ROW 2, COL 2: Chat column ────────────────────────────────────────── */}
+      {/* ── ROW 3, COL 2: Chat column ────────────────────────────────────────── */}
       <div
         style={{
-          gridRow: 2,
+          gridRow: 3,
           gridColumn: 2,
           display: 'flex',
           flexDirection: 'column',
@@ -862,11 +982,11 @@ export default function CortexAmbientPage() {
         <Footer />
       </div>
 
-      {/* ── ROW 2, COL 3: Right rail (400px) ────────────────────────────────── */}
+      {/* ── ROW 3, COL 3: Right rail (400px) ────────────────────────────────── */}
       <div
         data-rail="right"
         style={{
-          gridRow: 2,
+          gridRow: 3,
           gridColumn: 3,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -1382,6 +1502,223 @@ export default function CortexAmbientPage() {
             </div>
           </Panel>
         </div>
+
+        {/* ───────────────────────────────────────────────────────────────── */}
+        {/* Panel 7R: CC SESSIONS — factory session activity feed             */}
+        {/* ───────────────────────────────────────────────────────────────── */}
+        {(() => {
+          const liveCount = ccSessions.filter((s) => s.status === 'running').length
+          const errCount  = ccSessions.filter((s) => s.status === 'error' || s.status === 'rejected').length
+          const countLabel = ccSessions.length === 0 ? '0'
+            : liveCount > 0 ? `${liveCount} live${errCount > 0 ? ' · ' + errCount + 'err' : ''}`
+            : `${ccSessions.length}${errCount > 0 ? ' · ' + errCount + 'err' : ''}`
+
+          const statusDot = (status: string) =>
+            status === 'complete' || status === 'approved' ? '#22c55e' :
+            status === 'running'  ? '#ffb27a' :
+            status === 'error' || status === 'rejected' ? '#ef4444' :
+            'rgba(255,255,255,0.25)'
+
+          const stageColor = (stage: string | null) => {
+            if (!stage) return 'rgba(255,255,255,0.28)'
+            if (stage.includes('complet') || stage.includes('done') || stage.includes('approv')) return '#22c55e'
+            if (stage.includes('build') || stage.includes('run') || stage.includes('analys')) return '#ffb27a'
+            if (stage.includes('review') || stage.includes('deploy')) return '#6366f1'
+            if (stage.includes('fail') || stage.includes('error') || stage.includes('reject')) return '#ef4444'
+            return 'rgba(255,255,255,0.42)'
+          }
+
+          return (
+            <Panel
+              id="sessions"
+              label="SESSIONS"
+              count={countLabel}
+              pulse={liveCount > 0}
+              maxHeight={260}
+              defaultCollapsed={false}
+            >
+              {ccSessions.length === 0 ? (
+                <div style={{ ...ROW, fontFamily: MONO_FONT, fontSize: 11, color: 'rgba(255,255,255,0.28)' }}>
+                  <span style={{ color: '#22c55e', marginRight: 6 }}>{'>'}</span>
+                  no session data
+                </div>
+              ) : (
+                ccSessions.map((s) => (
+                  <div
+                    key={s.session_id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '8px 1fr 48px 26px',
+                      gap: 7,
+                      padding: '5px 10px',
+                      borderBottom: '1px solid rgba(255,178,122,0.03)',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: statusDot(s.status),
+                        boxShadow: s.status === 'running' ? '0 0 6px rgba(255,178,122,0.6)' : 'none',
+                        flexShrink: 0,
+                        animation: s.status === 'running' ? 'amber-pulse 1.5s ease-in-out infinite' : 'none',
+                      }}
+                    />
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{ fontFamily: MONO_FONT, fontSize: 10, color: 'rgba(255,255,255,0.68)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={s.session_id}
+                      >
+                        {s.session_id.slice(0, 14)}
+                      </div>
+                      {s.pipeline_stage && (
+                        <div style={{ fontFamily: MONO_FONT, fontSize: 9, color: stageColor(s.pipeline_stage), marginTop: 1 }}>
+                          {s.pipeline_stage}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      {s.confidence_score != null && (
+                        <span style={{
+                          fontFamily: MONO_FONT, fontSize: 10, fontVariantNumeric: 'tabular-nums',
+                          color: s.confidence_score >= 0.7 ? '#22c55e' : s.confidence_score >= 0.4 ? '#f59e0b' : '#ef4444',
+                        }}>
+                          {(s.confidence_score * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ ...MONO_CELL, ...TABULAR, fontSize: 9, textAlign: 'right' }}>
+                      {formatAge(s.created_at)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </Panel>
+          )
+        })()}
+
+        {/* ───────────────────────────────────────────────────────────────── */}
+        {/* Panel 8R: TOKEN FLOW — 24h API throughput sparkline (green)       */}
+        {/* ───────────────────────────────────────────────────────────────── */}
+        {(() => {
+          const ch = opsMetrics.cost_hourly
+          // Estimate tokens from cost (~$3 per 1M tokens avg)
+          const TOK_PER_USD = 333_333
+          const tokBuckets = ch.map((b) => Math.round(b.cost_usd * TOK_PER_USD))
+          const maxTok = Math.max(...tokBuckets, 1)
+          const totalTok = tokBuckets.reduce((s, t) => s + t, 0)
+
+          const W2 = 370, H2 = 38
+          const pts = tokBuckets.length > 1
+            ? tokBuckets.map((t, i) => {
+                const x = (i / (tokBuckets.length - 1)) * W2
+                const y = H2 - 4 - (t / maxTok) * (H2 - 8)
+                return `${x.toFixed(1)},${y.toFixed(1)}`
+              }).join(' ')
+            : `0,${H2 - 4} ${W2},${H2 - 4}`
+
+          const fmtK = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n)
+
+          return (
+            <Panel
+              id="tokflow"
+              label="TOK FLOW"
+              count={totalTok > 0 ? `~${fmtK(totalTok)}/24h` : 'no data'}
+              pulse={false}
+              maxHeight={90}
+              defaultCollapsed={false}
+            >
+              <div style={{ padding: '7px 10px 5px' }}>
+                <svg
+                  width={W2} height={H2}
+                  viewBox={`0 0 ${W2} ${H2}`}
+                  style={{ display: 'block', overflow: 'visible' }}
+                >
+                  <line x1={0} y1={H2 - 4} x2={W2} y2={H2 - 4}
+                    stroke="rgba(34,197,94,0.10)" strokeWidth={1} />
+                  {tokBuckets.length > 1 && (
+                    <polyline
+                      points={`0,${H2 - 4} ${pts} ${W2},${H2 - 4}`}
+                      fill="rgba(34,197,94,0.07)" stroke="none"
+                    />
+                  )}
+                  <polyline
+                    points={pts} fill="none"
+                    stroke="#22c55e" strokeWidth={1.5}
+                    strokeLinejoin="round" strokeLinecap="round"
+                  />
+                </svg>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                  <span style={{ ...MONO_CELL, fontSize: 9 }}>-24h</span>
+                  <span style={{ ...MONO_CELL, fontSize: 9 }}>now</span>
+                </div>
+              </div>
+            </Panel>
+          )
+        })()}
+
+        {/* ───────────────────────────────────────────────────────────────── */}
+        {/* Panel 9R: P1 ALERTS — blinking critical status board rows         */}
+        {/* ───────────────────────────────────────────────────────────────── */}
+        {(() => {
+          const p1Rows = statusRows.filter((r) => r.priority === 1)
+          return (
+            <Panel
+              id="p1alerts"
+              label="P1 ALERTS"
+              count={p1Rows.length > 0 ? `${p1Rows.length} critical` : 'clear'}
+              pulse={p1Rows.length > 0}
+              maxHeight={220}
+              defaultCollapsed={p1Rows.length === 0}
+            >
+              {p1Rows.length === 0 ? (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 12px',
+                  fontFamily: MONO_FONT, fontSize: 11, color: '#22c55e',
+                }}>
+                  <span style={{ animation: 'all-clear-pulse 3s ease-in-out infinite' }}>{'●'}</span>
+                  ALL CLEAR
+                </div>
+              ) : (
+                p1Rows.map((r) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      ...ROW,
+                      borderLeft: '2px solid #ef4444',
+                      background: blinkOn ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.01)',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: '#ef4444',
+                        boxShadow: blinkOn ? '0 0 9px rgba(239,68,68,0.9)' : '0 0 3px rgba(239,68,68,0.25)',
+                        transition: 'box-shadow 0.15s',
+                        flexShrink: 0, marginTop: 4,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: MONO_FONT, fontSize: 11, color: '#ef4444', fontWeight: 600, wordBreak: 'break-word' }}>
+                        {r.name}
+                      </div>
+                      {r.next_action && (
+                        <div style={{ fontFamily: MONO_FONT, fontSize: 10, color: 'rgba(255,255,255,0.40)', marginTop: 2 }}>
+                          {r.next_action}
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ ...MONO_CELL, ...TABULAR, marginTop: 2, flexShrink: 0, fontSize: 9 }}>
+                      {formatAge(r.last_touched)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </Panel>
+          )
+        })()}
       </div>
 
       {/* ── Page-local keyframes ────────────────────────────────────────────── */}
@@ -1423,15 +1760,35 @@ export default function CortexAmbientPage() {
           .ambient-bottom-stack { display: none !important; }
         }
 
-        /* Scrollbar styling for rail columns and chat region */
-        .ambient-chatlog-scroll::-webkit-scrollbar { width: 6px; }
+        /* Terminal-green scrollbars for rails */
+        [data-rail="left"]::-webkit-scrollbar { width: 4px; }
+        [data-rail="left"]::-webkit-scrollbar-track { background: rgba(0,0,0,0.40); }
+        [data-rail="left"]::-webkit-scrollbar-thumb {
+          background: rgba(34,197,94,0.45);
+          border-radius: 2px;
+        }
+        [data-rail="left"]::-webkit-scrollbar-thumb:hover {
+          background: rgba(34,197,94,0.75);
+        }
+        [data-rail="right"]::-webkit-scrollbar { width: 4px; }
+        [data-rail="right"]::-webkit-scrollbar-track { background: rgba(0,0,0,0.40); }
+        [data-rail="right"]::-webkit-scrollbar-thumb {
+          background: rgba(34,197,94,0.45);
+          border-radius: 2px;
+        }
+        [data-rail="right"]::-webkit-scrollbar-thumb:hover {
+          background: rgba(34,197,94,0.75);
+        }
+
+        /* Scrollbar styling for chat region */
+        .ambient-chatlog-scroll::-webkit-scrollbar { width: 5px; }
         .ambient-chatlog-scroll::-webkit-scrollbar-track { background: transparent; }
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb {
-          background: rgba(255,178,122,0.25);
+          background: rgba(255,178,122,0.22);
           border-radius: 3px;
         }
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,178,122,0.45);
+          background: rgba(255,178,122,0.42);
         }
 
         /* Markdown rendering inside assistant bubbles */

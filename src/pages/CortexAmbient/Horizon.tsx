@@ -317,7 +317,7 @@ export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps)
       className="ambient-horizon"
       style={{
         position: 'relative',
-        height: 60,
+        height: 30,
         background: 'rgba(6,7,10,0.94)',
         borderBottom: `1px solid rgba(255,178,122,0.10)`,
         backdropFilter: 'blur(6px)',
@@ -423,7 +423,7 @@ export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps)
         }
         @keyframes horizon-crt-scan {
           0%   { top: -1px; }
-          100% { top: 61px; }
+          100% { top: 31px; }
         }
       `}</style>
     </div>
