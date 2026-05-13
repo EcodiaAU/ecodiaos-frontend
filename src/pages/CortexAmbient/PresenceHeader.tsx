@@ -70,92 +70,91 @@ export function PresenceHeader({ audioEnabled, onToggleAudio, forkCount }: Prese
       }}
     >
       <div
-        className="mx-auto flex items-center justify-between gap-4 px-4 py-3 lg:py-4"
-        style={{ maxWidth: 1280 }}
+        className="mx-auto flex items-center gap-4 px-4"
+        style={{ maxWidth: 1280, height: 32 }}
       >
-        {/* Left: wordmark + breath line */}
-        <div className="flex flex-col">
-          <div
-            className="text-[22px] lg:text-[24px] font-semibold leading-none"
+        {/* Left: wordmark + breath line inline */}
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <span
             style={{
               color: AMBIENT_PALETTE.coreGlow,
+              fontSize: 13,
+              fontWeight: 600,
               letterSpacing: '-0.01em',
               fontFamily: "'Inter', system-ui, sans-serif",
+              lineHeight: 1,
             }}
           >
             EcodiaOS
-          </div>
+          </span>
           <div
             aria-hidden
-            className="ambient-breath-line mt-1.5"
+            className="ambient-breath-line"
             style={{
-              width: 80,
+              width: 28,
               height: 1,
               background: AMBIENT_PALETTE.coreGlow,
-              opacity: 0.6,
+              opacity: 0.55,
               animationDuration: `${period}s`,
             }}
           />
         </div>
 
-        {/* Center-right: status label */}
+        {/* Status + fork count */}
         <div
-          className="flex-1 text-center text-[13px] lg:text-[14px]"
           style={{
+            fontSize: 11,
             color: AMBIENT_PALETTE.textDim,
             fontFamily: "'JetBrains Mono', ui-monospace, monospace",
             letterSpacing: '0.04em',
+            lineHeight: 1,
           }}
         >
-          <span style={{ color: AMBIENT_PALETTE.textDim }}>· </span>
-          <span
-            style={{
-              color:
-                label === 'thinking'
-                  ? AMBIENT_PALETTE.coreGlow
-                  : label === 'alive'
-                    ? AMBIENT_PALETTE.emberSoft
-                    : AMBIENT_PALETTE.textDim,
-            }}
-          >
+          <span style={{
+            color:
+              label === 'thinking' ? AMBIENT_PALETTE.coreGlow
+              : label === 'alive' ? AMBIENT_PALETTE.emberSoft
+              : AMBIENT_PALETTE.textDim,
+          }}>
             {label}
           </span>
-          {forkCount > 0 ? (
+          {forkCount > 0 && (
             <span style={{ color: AMBIENT_PALETTE.textDim }}> · {forkCount}</span>
-          ) : null}
+          )}
         </div>
 
-        {/* Right: clock + audio toggle */}
-        <div className="flex items-center gap-3">
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Clock + audio toggle */}
+        <div className="flex items-center gap-2">
           <span
-            className="text-[13px] tabular-nums"
             style={{
+              fontSize: 11,
+              fontVariantNumeric: 'tabular-nums',
               color: AMBIENT_PALETTE.textDim,
               fontFamily: "'JetBrains Mono', ui-monospace, monospace",
               letterSpacing: '0.05em',
+              lineHeight: 1,
             }}
             aria-label={`time ${clock} AEST`}
           >
-            {clock} <span className="opacity-70">AEST</span>
+            {clock} <span style={{ opacity: 0.6 }}>AEST</span>
           </span>
           <button
             type="button"
             onClick={onToggleAudio}
             aria-label={audioEnabled ? 'mute ambient audio' : 'enable ambient audio'}
             aria-pressed={audioEnabled}
-            className="flex items-center justify-center rounded-full"
             style={{
-              width: 44,
-              height: 44,
-              border: audioEnabled
-                ? '1px solid rgba(255,178,122,0.55)'
-                : '1px solid rgba(255,255,255,0.12)',
-              background: audioEnabled
-                ? 'radial-gradient(circle at 50% 40%, rgba(255,178,122,0.32) 0%, rgba(255,178,122,0.04) 70%)'
-                : 'transparent',
-              color: audioEnabled ? AMBIENT_PALETTE.coreGlow : 'rgba(255,255,255,0.45)',
-              transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+              width: 26, height: 26,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: '50%',
+              border: audioEnabled ? '1px solid rgba(255,178,122,0.45)' : '1px solid rgba(255,255,255,0.10)',
+              background: audioEnabled ? 'rgba(255,178,122,0.12)' : 'transparent',
+              color: audioEnabled ? AMBIENT_PALETTE.coreGlow : 'rgba(255,255,255,0.40)',
               cursor: 'pointer',
+              transition: 'all 200ms ease',
             }}
           >
             {audioEnabled ? <SpeakerOnGlyph /> : <SpeakerOffGlyph />}

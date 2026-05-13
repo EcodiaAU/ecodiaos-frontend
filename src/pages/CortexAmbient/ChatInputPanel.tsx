@@ -230,7 +230,7 @@ export function ChatInputPanel() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div
-      className="ambient-input w-full px-4 pb-2 pt-2"
+      className="ambient-input w-full px-4 pb-1 pt-2"
       style={{
         position: 'relative',
         zIndex: 20,

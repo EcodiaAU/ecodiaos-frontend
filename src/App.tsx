@@ -1,27 +1,16 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AppShell } from './components/layout/AppShell'
-import { useAuthStore } from './store/authStore'
-import { SceneErrorBoundary } from './components/shared/SceneErrorBoundary'
 import { motion } from 'framer-motion'
+import { useAuthStore } from './store/authStore'
+import api from './api/client'
+import toast from 'react-hot-toast'
 
-// ─── Code-split every route-level page ──────────────────────────────────
+// ── Code-split route pages ───────────────────────────────────────────────────
+const DashboardPage = lazy(() => import('./pages/CortexAmbient'))
+const MeetingPage   = lazy(() => import('./pages/Meeting'))
+const MeetingsPage  = lazy(() => import('./pages/Meetings'))
 
-// Auth-protected admin pages (inside AppShell)
-const CortexPage = lazy(() => import('./pages/Cortex'))
-const CortexAmbientPage = lazy(() => import('./pages/CortexAmbient'))
-const RescuePage = lazy(() => import('./pages/Rescue'))
-const StatusBoardPage = lazy(() => import('./pages/StatusBoard'))
-
-// Meeting/voice pages (no auth needed - accessible from phone)
-const LoginPage = lazy(() => import('./pages/Login'))
-const VoicePage = lazy(() => import('./pages/Voice'))
-const MeetingPage = lazy(() => import('./pages/Meeting'))
-const MeetingDetailPage = lazy(() => import('./pages/MeetingDetail'))
-// Unified meetings hub with diarisation + script view (replaces MeetingsList)
-const MeetingsPage = lazy(() => import('./pages/Meetings'))
-
-/** Ambient loading state */
+/** Minimal loading pulse */
 function SceneSuspense({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
@@ -44,18 +33,88 @@ function SceneSuspense({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** Wrap a page with error boundary + suspense */
-function Scene({ name, children }: { name: string; children: React.ReactNode }) {
+/**
+ * Inline login overlay — shown over the dashboard when no token is present.
+ * No separate /login route needed.
+ */
+function LoginOverlay() {
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const login = useAuthStore((s) => s.login)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const { data } = await api.post('/auth/login', { password })
+      login(data.token, data.refreshToken)
+    } catch {
+      toast.error('Invalid password')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
-    <SceneErrorBoundary sceneName={name}>
-      <SceneSuspense>{children}</SceneSuspense>
-    </SceneErrorBoundary>
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: '#000',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <motion.form
+        onSubmit={handleSubmit}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 80, damping: 20 }}
+        style={{
+          width: '100%', maxWidth: 280,
+          padding: '2rem',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 8,
+        }}
+      >
+        <div style={{ marginBottom: '2rem' }}>
+          <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)' }}>
+            Ecodia OS
+          </span>
+        </div>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={{
+            width: '100%', background: 'transparent',
+            border: 'none', borderBottom: '1px solid rgba(255,255,255,0.12)',
+            padding: '0.5rem 0', color: '#e0e0e0', fontSize: 14, outline: 'none',
+          }}
+          autoFocus
+        />
+        <button
+          type="submit"
+          disabled={loading || !password}
+          style={{
+            marginTop: '1.5rem', width: '100%',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 6, padding: '0.6rem 1rem',
+            fontSize: 11, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em',
+            color: 'rgba(255,255,255,0.80)', cursor: 'pointer',
+            opacity: (loading || !password) ? 0.2 : 1,
+          }}
+        >
+          {loading ? '...' : 'Enter'}
+        </button>
+      </motion.form>
+    </div>
   )
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore(s => s.token)
-  if (!token) return <Navigate to="/login" replace />
+/** Wraps a protected page — shows inline login overlay if unauthenticated */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore((s) => s.token)
+  if (!token) return <LoginOverlay />
   return <>{children}</>
 }
 
@@ -63,47 +122,25 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* ── Public / no-auth routes ─────────────────────────────────── */}
-        <Route path="/login" element={<SceneSuspense><LoginPage /></SceneSuspense>} />
-
-        {/* Meeting recorder + viewer - no auth, mobile-accessible */}
-        <Route path="/voice" element={<SceneSuspense><VoicePage /></SceneSuspense>} />
-        <Route path="/meeting" element={<SceneSuspense><MeetingPage /></SceneSuspense>} />
-        <Route path="/meetings/:id" element={<SceneSuspense><MeetingDetailPage /></SceneSuspense>} />
-
-        {/* ── Auth-protected admin shell ───────────────────────────────── */}
+        {/* Root: EcodiaOS dashboard, auth-gated inline */}
         <Route
+          path="/"
           element={
-            <ProtectedRoute>
-              <AppShell />
-            </ProtectedRoute>
+            <AuthGate>
+              <SceneSuspense>
+                <DashboardPage />
+              </SceneSuspense>
+            </AuthGate>
           }
-        >
-          <Route index element={<Navigate to="/cortex" />} />
-          <Route path="/cortex" element={<Scene name="Cortex"><CortexPage /></Scene>} />
-          <Route path="/cortex-ambient" element={<Scene name="CortexAmbient"><CortexAmbientPage /></Scene>} />
-          <Route path="/rescue" element={<Scene name="Rescue"><RescuePage /></Scene>} />
-          <Route path="/meetings" element={<Scene name="Meetings"><MeetingsPage /></Scene>} />
-          <Route path="/status-board" element={<Scene name="StatusBoard"><StatusBoardPage /></Scene>} />
-          <Route path="/settings" element={<Navigate to="/cortex" replace />} />
-          {/* Legacy redirects */}
-          <Route path="/dashboard" element={<Navigate to="/cortex?ws=vitals" replace />} />
-          <Route path="/gmail" element={<Navigate to="/cortex?ws=socials" replace />} />
-          <Route path="/linkedin" element={<Navigate to="/cortex?ws=socials" replace />} />
-          <Route path="/crm" element={<Navigate to="/cortex?ws=crm" replace />} />
-          <Route path="/crm/:clientId" element={<Navigate to="/cortex?ws=crm" replace />} />
-          <Route path="/bookkeeping" element={<Navigate to="/cortex?ws=bookkeeping" replace />} />
-          <Route path="/codebase" element={<Navigate to="/cortex?ws=coding" replace />} />
-          <Route path="/knowledge-graph" element={<Navigate to="/cortex?ws=memory" replace />} />
-          <Route path="/momentum" element={<Navigate to="/cortex?ws=momentum" replace />} />
-          <Route path="/coding" element={<Navigate to="/cortex?ws=coding" replace />} />
-          <Route path="/factory-dev" element={<Navigate to="/cortex?ws=coding" replace />} />
-          <Route path="/finance" element={<Navigate to="/cortex?ws=bookkeeping" replace />} />
-          <Route path="/kg-explorer" element={<Navigate to="/cortex?ws=memory" replace />} />
-          <Route path="/workspace" element={<Navigate to="/cortex?ws=admin" replace />} />
-          <Route path="/claude-code" element={<Navigate to="/cortex?ws=admin" replace />} />
-          <Route path="*" element={<Navigate to="/cortex" replace />} />
-        </Route>
+        />
+
+        {/* Meeting recorder + viewer: no auth, mobile-accessible */}
+        <Route path="/meeting"      element={<SceneSuspense><MeetingPage /></SceneSuspense>} />
+        <Route path="/meetings"     element={<SceneSuspense><MeetingsPage /></SceneSuspense>} />
+        <Route path="/meetings/:id" element={<SceneSuspense><MeetingsPage /></SceneSuspense>} />
+
+        {/* Everything else: back to root */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

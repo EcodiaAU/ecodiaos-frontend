@@ -24,6 +24,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
     localStorage.removeItem('ecodia_token')
     localStorage.removeItem('ecodia_refresh')
     set({ token: null, refreshToken: null })
-    window.location.href = '/login'
+    window.location.href = '/'
   },
 }))

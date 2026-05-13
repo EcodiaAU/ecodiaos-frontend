@@ -5,6 +5,7 @@
  * Origin: fork_mp3ndv83_63898a, 2026-05-13
  */
 import { useState, useEffect, useRef } from 'react'
+import api from '@/api/client'
 
 export interface PerceptionEvent {
   type: string
@@ -29,9 +30,11 @@ export function usePerceptionBus(): PerceptionBusState {
 
     const fetch_ = async () => {
       try {
-        const res = await fetch('/api/perception/recent')
-        if (!res.ok) return
-        const data: PerceptionBusState = await res.json()
+        const { data } = await api.get('/perception/recent')
+        // cap to last 50 events client-side to bound memory
+        if (data?.events && Array.isArray(data.events)) {
+          data.events = data.events.slice(-50)
+        }
         if (!cancelled) setState(data)
       } catch {
         // keep last state
@@ -39,7 +42,7 @@ export function usePerceptionBus(): PerceptionBusState {
     }
 
     fetch_()
-    timerRef.current = setInterval(fetch_, 3000)
+    timerRef.current = setInterval(fetch_, 5000)
 
     return () => {
       cancelled = true

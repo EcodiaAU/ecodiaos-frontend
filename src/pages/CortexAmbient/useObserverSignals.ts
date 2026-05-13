@@ -5,6 +5,7 @@
  * Origin: fork_mp3ndv83_63898a, 2026-05-13
  */
 import { useState, useEffect, useRef } from 'react'
+import api from '@/api/client'
 
 export interface ObserverSignal {
   id: number
@@ -32,9 +33,7 @@ export function useObserverSignals(): ObserverSignalsState {
 
     const fetch_ = async () => {
       try {
-        const res = await fetch('/api/observer-signals')
-        if (!res.ok) return
-        const data: ObserverSignalsState = await res.json()
+        const { data } = await api.get('/observer-signals')
         if (!cancelled) setState(data)
       } catch {
         // keep last state

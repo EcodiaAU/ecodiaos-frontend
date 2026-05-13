@@ -45,7 +45,6 @@ import { useOpsMetrics } from './useOpsMetrics'
 import { useSchedulerHeatmap } from './useSchedulerHeatmap'
 import { useShipBoard } from './useShipBoard'
 import { useKvStoreRecent } from './useKvStoreRecent'
-import { useCcSessions } from './useCcSessions'
 import { AMBIENT_PALETTE } from './palette'
 
 // ── Age formatting ──────────────────────────────────────────────────────────
@@ -183,13 +182,9 @@ export default function CortexAmbientPage() {
   const { deploys } = useShipBoard()
   const { writes: kvWrites } = useKvStoreRecent()
 
-  // Phase 5: right rail additional panels + blink state
-  const { sessions: ccSessions } = useCcSessions()
-  const [blinkOn, setBlinkOn] = useState(true)
-  useEffect(() => {
-    const t = setInterval(() => setBlinkOn((v) => !v), 900)
-    return () => clearInterval(t)
-  }, [])
+  // Phase 5: right rail additional panels
+  // blinkOn removed (Phase 10 perf): blink effects now use CSS animation pulse-dot
+  // ccSessions removed (Phase 10): SESSIONS panel deleted per Tate feedback
 
   // Phase 9 H4: solar disc pulses for 1.1s when firedCount1h increments
   const [cronFiring, setCronFiring] = useState(false)
@@ -355,8 +350,7 @@ export default function CortexAmbientPage() {
                   <span style={{
                     fontFamily: MONO_FONT, fontSize: 9,
                     color: '#ef4444',
-                    opacity: blinkOn ? 1 : 0.3,
-                    transition: 'opacity 0.15s',
+                    animation: 'pulse-dot 1.8s ease-in-out infinite',
                   }}>
                     P1:{p1}
                   </span>
@@ -406,7 +400,7 @@ export default function CortexAmbientPage() {
               <span style={{
                 ...VAL,
                 color: unackedCount > 0 ? '#f59e0b' : 'rgba(255,255,255,0.88)',
-                opacity: unackedCount > 0 && blinkOn ? 1 : undefined,
+                animation: unackedCount > 0 ? 'pulse-dot 1.8s ease-in-out infinite' : undefined,
               }}>
                 {signals.length}
               </span>
@@ -520,8 +514,8 @@ export default function CortexAmbientPage() {
               </svg>
               <span style={{
                 fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.12em',
-                color: blinkOn ? '#c8f243' : 'rgba(200,242,67,0.22)',
-                transition: 'color 0.15s',
+                color: '#c8f243',
+                animation: 'pulse-dot 1.8s ease-in-out infinite',
               }}>
                 {'●'} CONNECTED
               </span>
@@ -691,7 +685,7 @@ export default function CortexAmbientPage() {
             ? `$${opsMetrics.cost_per_turn_usd_24h.toFixed(4)}/turn`
             : 'no data'
           const weekTotal = opsMetrics.cost_usd_this_week
-          const weekLabel = weekTotal > 0 ? `$${weekTotal.toFixed(2)} this week` : ''
+          const weekLabel = weekTotal > 0 ? `$${weekTotal.toFixed(2)}/week` : ''
 
           // SVG sparkline geometry
           const W = 196, H = 46
@@ -1776,101 +1770,6 @@ export default function CortexAmbientPage() {
             </div>
           </Panel>
         </div>
-
-        {/* ───────────────────────────────────────────────────────────────── */}
-        {/* Panel 7R: CC SESSIONS — factory session activity feed             */}
-        {/* ───────────────────────────────────────────────────────────────── */}
-        {(() => {
-          const liveCount = ccSessions.filter((s) => s.status === 'running').length
-          const errCount  = ccSessions.filter((s) => s.status === 'error' || s.status === 'rejected').length
-          const countLabel = ccSessions.length === 0 ? '0'
-            : liveCount > 0 ? `${liveCount} live${errCount > 0 ? ' · ' + errCount + 'err' : ''}`
-            : `${ccSessions.length}${errCount > 0 ? ' · ' + errCount + 'err' : ''}`
-
-          const statusDot = (status: string) =>
-            status === 'complete' || status === 'approved' ? '#22c55e' :
-            status === 'running'  ? '#ffb27a' :
-            status === 'error' || status === 'rejected' ? '#ef4444' :
-            'rgba(255,255,255,0.25)'
-
-          const stageColor = (stage: string | null) => {
-            if (!stage) return 'rgba(255,255,255,0.28)'
-            if (stage.includes('complet') || stage.includes('done') || stage.includes('approv')) return '#22c55e'
-            if (stage.includes('build') || stage.includes('run') || stage.includes('analys')) return '#ffb27a'
-            if (stage.includes('review') || stage.includes('deploy')) return '#6366f1'
-            if (stage.includes('fail') || stage.includes('error') || stage.includes('reject')) return '#ef4444'
-            return 'rgba(255,255,255,0.42)'
-          }
-
-          return (
-            <Panel
-              id="sessions"
-              label="SESSIONS"
-              count={countLabel}
-              pulse={liveCount > 0}
-              maxHeight={260}
-              defaultCollapsed={false}
-            >
-              {ccSessions.length === 0 ? (
-                <div style={{ ...ROW, fontFamily: MONO_FONT, fontSize: 11, color: 'rgba(255,255,255,0.28)' }}>
-                  <span style={{ color: '#22c55e', marginRight: 6 }}>{'>'}</span>
-                  no session data
-                </div>
-              ) : (
-                ccSessions.map((s) => (
-                  <div
-                    key={s.session_id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '8px 1fr 48px 26px',
-                      gap: 7,
-                      padding: '5px 10px',
-                      borderBottom: '1px solid rgba(255,178,122,0.03)',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: statusDot(s.status),
-                        boxShadow: s.status === 'running' ? '0 0 6px rgba(255,178,122,0.6)' : 'none',
-                        flexShrink: 0,
-                        animation: s.status === 'running' ? 'amber-pulse 1.5s ease-in-out infinite' : 'none',
-                      }}
-                    />
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{ fontFamily: MONO_FONT, fontSize: 10, color: 'rgba(255,255,255,0.68)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                        title={s.session_id}
-                      >
-                        {s.session_id.slice(0, 14)}
-                      </div>
-                      {s.pipeline_stage && (
-                        <div style={{ fontFamily: MONO_FONT, fontSize: 9, color: stageColor(s.pipeline_stage), marginTop: 1 }}>
-                          {s.pipeline_stage}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      {s.confidence_score != null && (
-                        <span style={{
-                          fontFamily: MONO_FONT, fontSize: 10, fontVariantNumeric: 'tabular-nums',
-                          color: s.confidence_score >= 0.7 ? '#22c55e' : s.confidence_score >= 0.4 ? '#f59e0b' : '#ef4444',
-                        }}>
-                          {(s.confidence_score * 100).toFixed(0)}%
-                        </span>
-                      )}
-                    </div>
-                    <span style={{ ...MONO_CELL, ...TABULAR, fontSize: 9, textAlign: 'right' }}>
-                      {formatAge(s.created_at)}
-                    </span>
-                  </div>
-                ))
-              )}
-            </Panel>
-          )
-        })()}
-
         {/* ───────────────────────────────────────────────────────────────── */}
         {/* Panel 9R: P1 ALERTS — blinking critical status board rows         */}
         {/* ───────────────────────────────────────────────────────────────── */}
@@ -1901,16 +1800,15 @@ export default function CortexAmbientPage() {
                     style={{
                       ...ROW,
                       borderLeft: '2px solid #ef4444',
-                      background: blinkOn ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.01)',
-                      transition: 'background 0.15s',
+                      background: 'rgba(239,68,68,0.04)',
                     }}
                   >
                     <span
                       style={{
                         width: 6, height: 6, borderRadius: '50%',
                         background: '#ef4444',
-                        boxShadow: blinkOn ? '0 0 9px rgba(239,68,68,0.9)' : '0 0 3px rgba(239,68,68,0.25)',
-                        transition: 'box-shadow 0.15s',
+                        boxShadow: '0 0 6px rgba(239,68,68,0.55)',
+                        animation: 'amber-pulse 1.5s ease-in-out infinite',
                         flexShrink: 0, marginTop: 4,
                       }}
                     />

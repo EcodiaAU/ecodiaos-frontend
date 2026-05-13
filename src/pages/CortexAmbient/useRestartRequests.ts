@@ -5,6 +5,7 @@
  * Origin: fork_mp3ndv83_63898a, 2026-05-13
  */
 import { useState, useEffect, useRef } from 'react'
+import api from '@/api/client'
 
 export interface RestartRequest {
   id: string
@@ -30,9 +31,7 @@ export function useRestartRequests(): RestartRequestsState {
 
     const fetch_ = async () => {
       try {
-        const res = await fetch('/api/restart-requests')
-        if (!res.ok) return
-        const data: RestartRequestsState = await res.json()
+        const { data } = await api.get('/restart-requests')
         if (!cancelled) setState(data)
       } catch {
         // keep last state

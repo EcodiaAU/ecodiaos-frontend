@@ -5,6 +5,7 @@
  * Origin: fork_mp3ndv83_63898a, 2026-05-13
  */
 import { useState, useEffect, useRef } from 'react'
+import api from '@/api/client'
 
 export interface WorkingSetThread {
   id: string
@@ -33,9 +34,7 @@ export function useWorkingSet(): WorkingSetState {
 
     const fetch_ = async () => {
       try {
-        const res = await fetch('/api/working-set')
-        if (!res.ok) return
-        const data: WorkingSetState = await res.json()
+        const { data } = await api.get('/working-set')
         if (!cancelled) setState(data)
       } catch {
         // Network error — keep last state
@@ -43,7 +42,7 @@ export function useWorkingSet(): WorkingSetState {
     }
 
     fetch_()
-    timerRef.current = setInterval(fetch_, 3000)
+    timerRef.current = setInterval(fetch_, 5000)
 
     return () => {
       cancelled = true

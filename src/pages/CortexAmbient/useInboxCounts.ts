@@ -6,6 +6,7 @@
  * Origin: fork_mp3ndv83_63898a, 2026-05-13
  */
 import { useState, useEffect, useRef } from 'react'
+import api from '@/api/client'
 
 export interface InboxAccount {
   unread: number
@@ -33,9 +34,7 @@ export function useInboxCounts(): InboxCountsState {
 
     const fetch_ = async () => {
       try {
-        const res = await fetch('/api/triage/inbox-counts')
-        if (!res.ok) return
-        const data: InboxCountsState = await res.json()
+        const { data } = await api.get('/triage/inbox-counts')
         if (!cancelled) setState(data)
       } catch {
         // keep last state

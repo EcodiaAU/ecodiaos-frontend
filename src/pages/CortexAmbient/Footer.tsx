@@ -55,15 +55,7 @@ function useUptime() {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-// ── Blink ────────────────────────────────────────────────────────────────────
-function useBlink(ms = 900) {
-  const [on, setOn] = useState(true)
-  useEffect(() => {
-    const t = setInterval(() => setOn((v) => !v), ms)
-    return () => clearInterval(t)
-  }, [ms])
-  return on
-}
+// Blink replaced with CSS keyframes — no JS state toggle needed
 
 // ── Separator ────────────────────────────────────────────────────────────────
 function Sep() {
@@ -78,7 +70,6 @@ function Sep() {
 export function Footer() {
   const latencyMs = usePing()
   const uptime = useUptime()
-  const blink = useBlink()
 
   const latencyColor =
     latencyMs === null
@@ -93,7 +84,7 @@ export function Footer() {
     <footer
       style={{
         borderTop: '1px solid rgba(255,178,122,0.07)',
-        padding: '5px 14px',
+        padding: '3px 12px',
         background: 'rgba(0,0,0,0.40)',
         display: 'flex',
         alignItems: 'center',
@@ -102,7 +93,7 @@ export function Footer() {
         fontSize: 10,
         letterSpacing: '0.04em',
         color: DIM,
-        minHeight: 26,
+        minHeight: 20,
         flexShrink: 0,
         overflowX: 'auto',
         whiteSpace: 'nowrap',
@@ -118,8 +109,7 @@ export function Footer() {
             background: latencyMs !== null ? latencyColor : DIM,
             boxShadow: latencyMs !== null ? `0 0 5px ${latencyColor}` : 'none',
             flexShrink: 0,
-            opacity: blink ? 1 : 0.3,
-            transition: 'opacity 0.15s',
+            animation: 'pulse-dot 1.8s ease-in-out infinite',
             display: 'inline-block',
           }}
         />
@@ -142,8 +132,7 @@ export function Footer() {
           style={{
             color: '#6366f1',
             fontSize: 9,
-            opacity: blink ? 1 : 0.4,
-            transition: 'opacity 0.15s',
+            animation: 'pulse-dot 1.8s ease-in-out infinite',
             letterSpacing: '0.08em',
           }}
         >
@@ -155,8 +144,7 @@ export function Footer() {
           style={{
             color: GREEN,
             fontSize: 9,
-            opacity: blink ? 0.4 : 1,
-            transition: 'opacity 0.15s',
+            animation: 'pulse-dot 1.8s ease-in-out infinite reverse',
             letterSpacing: '0.08em',
           }}
         >
@@ -208,10 +196,10 @@ export function Footer() {
       {/* TRANSMITTING indicator */}
       <span
         style={{
-          color: blink ? '#ff6a10' : 'rgba(255,100,16,0.25)',
+          color: '#ff6a10',
           fontSize: 9,
           letterSpacing: '0.10em',
-          transition: 'color 0.15s',
+          animation: 'pulse-dot 1.8s ease-in-out infinite',
           flexShrink: 0,
         }}
       >
