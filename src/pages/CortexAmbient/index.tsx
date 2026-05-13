@@ -42,6 +42,9 @@ import { usePerceptionBus } from './usePerceptionBus'
 import { useRestartRequests } from './useRestartRequests'
 import { useInboxCounts } from './useInboxCounts'
 import { useOpsMetrics } from './useOpsMetrics'
+import { useSchedulerHeatmap } from './useSchedulerHeatmap'
+import { useShipBoard } from './useShipBoard'
+import { useKvStoreRecent } from './useKvStoreRecent'
 import { AMBIENT_PALETTE } from './palette'
 
 // ── Age formatting ──────────────────────────────────────────────────────────
@@ -163,6 +166,11 @@ export default function CortexAmbientPage() {
   // Phase 3: left rail metrics
   const opsMetrics = useOpsMetrics()
 
+  // Phase 4: left rail panels 11/12/13
+  const { crons, firedCount1h } = useSchedulerHeatmap()
+  const { deploys } = useShipBoard()
+  const { writes: kvWrites } = useKvStoreRecent()
+
   // Flash states
   const observerFlash = useFlash(signals)
   const perceptionFlash = useFlash(perceptionEvents)
@@ -210,7 +218,11 @@ export default function CortexAmbientPage() {
     >
       {/* ── ROW 1: Horizon band — spans all three columns ──────────────────── */}
       <div style={{ gridColumn: '1 / -1', gridRow: 1 }}>
-        <Horizon runningForks={runningCount} />
+        <Horizon
+          runningForks={runningCount}
+          tokPerTurn={opsMetrics.cost_per_turn_usd_24h !== null ? undefined : null}
+          costPerTurn={opsMetrics.cost_per_turn_usd_24h}
+        />
       </div>
 
       {/* ── ROW 2, COL 1: Left rail ─────────────────────────────────────────── */}
@@ -588,6 +600,234 @@ export default function CortexAmbientPage() {
             </Panel>
           )
         })()}
+
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 11: SCHEDULER HEAT MAP — cron fired windows       */}
+        {/* ─────────────────────────────────────────────────────── */}
+        <Panel
+          id="scheduler"
+          label="SCHEDULER"
+          count={`${firedCount1h} fired 1h`}
+          pulse={false}
+          maxHeight={220}
+          defaultCollapsed={true}
+        >
+          {crons.length === 0 ? (
+            <div style={{ ...ROW, ...TEXT_DIM, fontFamily: MONO_FONT }}>no cron data</div>
+          ) : (
+            <div style={{ padding: '6px 10px 8px' }}>
+              {/* header row */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 28px 28px 28px',
+                  gap: 4,
+                  marginBottom: 5,
+                  paddingBottom: 4,
+                  borderBottom: '1px solid rgba(255,178,122,0.06)',
+                }}
+              >
+                <span style={{ ...MONO_CELL, fontSize: 9 }}>CRON</span>
+                <span style={{ ...MONO_CELL, fontSize: 9, textAlign: 'center' }}>1h</span>
+                <span style={{ ...MONO_CELL, fontSize: 9, textAlign: 'center' }}>6h</span>
+                <span style={{ ...MONO_CELL, fontSize: 9, textAlign: 'center' }}>24h</span>
+              </div>
+              {crons.map((c) => (
+                <div
+                  key={c.name}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 28px 28px 28px',
+                    gap: 4,
+                    marginBottom: 3,
+                    alignItems: 'center',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: MONO_FONT,
+                      fontSize: 10,
+                      color: c.fired_1h ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.35)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={c.name}
+                  >
+                    {c.name}
+                  </span>
+                  {([c.fired_1h, c.fired_6h, c.fired_24h] as boolean[]).map((fired, wi) => (
+                    <span
+                      key={wi}
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 12,
+                        textAlign: 'center',
+                        color: fired ? '#ffb27a' : 'rgba(255,255,255,0.18)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {fired ? '■' : '·'}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 12: SHIP BOARD — recent Vercel deployments        */}
+        {/* ─────────────────────────────────────────────────────── */}
+        {(() => {
+          const latestAge = deploys[0]?.created_at
+            ? formatAge(deploys[0].created_at)
+            : null
+          return (
+            <Panel
+              id="ships"
+              label="SHIPS"
+              count={latestAge ? `last ${latestAge}` : `${deploys.length}`}
+              pulse={false}
+              maxHeight={200}
+              defaultCollapsed={true}
+            >
+              {deploys.length === 0 ? (
+                <div style={{ ...ROW, ...TEXT_DIM, fontFamily: MONO_FONT }}>no deployments</div>
+              ) : (
+                deploys.map((d) => {
+                  const stateColor =
+                    d.state === 'READY'    ? '#22c55e' :
+                    d.state === 'ERROR'    ? '#ef4444' :
+                    d.state === 'BUILDING' ? '#f59e0b' :
+                    'rgba(255,255,255,0.30)'
+                  const isBuilding = d.state === 'BUILDING'
+                  return (
+                    <div
+                      key={d.vercel_deployment_id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 52px 36px',
+                        gap: 6,
+                        padding: '5px 12px',
+                        borderBottom: '1px solid rgba(255,178,122,0.04)',
+                        alignItems: 'center',
+                      }}
+                    >
+                      {/* project name */}
+                      <div>
+                        <div
+                          style={{
+                            fontFamily: MONO_FONT,
+                            fontSize: 11,
+                            color: 'rgba(255,255,255,0.82)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={d.git_commit_message ?? d.project_name}
+                        >
+                          {d.project_name}
+                        </div>
+                        {d.git_commit_sha && (
+                          <div style={{ fontFamily: MONO_FONT, fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                            {d.git_commit_sha}
+                          </div>
+                        )}
+                      </div>
+                      {/* state */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: stateColor,
+                            boxShadow: `0 0 5px ${stateColor}`,
+                            flexShrink: 0,
+                            animation: isBuilding ? 'amber-pulse 1.5s ease-in-out infinite' : 'none',
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontFamily: MONO_FONT,
+                            fontSize: 9,
+                            color: stateColor,
+                            letterSpacing: '0.03em',
+                          }}
+                        >
+                          {d.state}
+                        </span>
+                      </div>
+                      {/* age */}
+                      <span style={{ ...MONO_CELL, ...TABULAR, fontSize: 10, textAlign: 'right' }}>
+                        {formatAge(d.created_at)}
+                      </span>
+                    </div>
+                  )
+                })
+              )}
+            </Panel>
+          )
+        })()}
+
+        {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel 13: KV STORE WRITES — last 10 updated keys        */}
+        {/* ─────────────────────────────────────────────────────── */}
+        <Panel
+          id="kv"
+          label="KV"
+          count={`${kvWrites.length} recent`}
+          pulse={false}
+          maxHeight={200}
+          defaultCollapsed={true}
+        >
+          {kvWrites.length === 0 ? (
+            <div style={{ ...ROW, ...TEXT_DIM, fontFamily: MONO_FONT }}>no kv activity</div>
+          ) : (
+            <div style={{ padding: '4px 0' }}>
+              {kvWrites.map((w, i) => {
+                const sizeLabel =
+                  w.val_size >= 1024
+                    ? `${(w.val_size / 1024).toFixed(1)}k`
+                    : `${w.val_size}b`
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 30px 28px',
+                      gap: 6,
+                      padding: '4px 12px',
+                      borderBottom: '1px solid rgba(255,178,122,0.03)',
+                      alignItems: 'baseline',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: MONO_FONT,
+                        fontSize: 10,
+                        color: i === 0 ? 'rgba(255,255,255,0.82)' : `rgba(255,255,255,${Math.max(0.28, 0.75 - i * 0.05)})`,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={w.key}
+                    >
+                      {w.key}
+                    </span>
+                    <span style={{ ...MONO_CELL, fontSize: 9, textAlign: 'right', color: 'rgba(255,255,255,0.28)' }}>
+                      {sizeLabel}
+                    </span>
+                    <span style={{ ...MONO_CELL, ...TABULAR, fontSize: 10, textAlign: 'right' }}>
+                      {formatAge(w.updated_at)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Panel>
       </div>
 
       {/* ── ROW 2, COL 2: Chat column ────────────────────────────────────────── */}

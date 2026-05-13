@@ -1,88 +1,101 @@
 /**
  * Horizon - the breathing oscilloscope band.
  *
- * Round-3 redispatch (fork_mowtxg3d_302865). Spec §D motion language.
+ * Phase 4 upgrade (fork_mp3pkavh_12c438): multi-dimensional encoding.
+ *   1. Color by mode — idle (ember), thinking (bright amber), streaming (hot orange)
+ *   2. Secondary fork-density path — second polyline, opacity ∝ running fork count
+ *   3. Event pips — SVG circles that spike briefly on fork-spawn / fork-done events
+ *   4. Right-side counter overlay — "N forks · K tok · $cost/turn" (30s poll)
+ *   5. CRT scan line — faint horizontal sweep every 4s (CSS keyframe, GPU composited)
  *
- * The single continuous-motion element on the page. Bounded to 56-64px tall.
- * Encodes 4 distinct states via amplitude/frequency:
- *   - idle           - one slow ECG-style beat every ~5.8s
- *   - thinking       - low-amplitude continuous wave
- *   - streaming      - higher-amplitude wave with token-driven jitter
- *   - event-pip      - one-frame vertical spike (fork spawn/done/error)
+ * Round-3 baseline (fork_mowtxg3d_302865). Spec §D + §4 Panel 0.
  *
- * Implementation rules (per spec):
- *   - Single SVG <path>, ~720pt polyline, resampled per rAF tick.
- *   - <2KB code budget, <1ms/frame on iPhone 12.
+ * Implementation rules (per spec §8):
+ *   - Single rAF loop drives both SVG paths. <1.2ms/frame total.
  *   - No filters, no gradient repaints, no per-pixel work.
+ *   - Color changes via SVG attribute mutation (no style recalc).
  *   - Bails when document.hidden OR prefers-reduced-motion: reduce.
- *
- * State source: derived from useOSSessionStore (status='streaming' wins),
- * else useForks (any running fork = thinking), else idle. Motion downstream
- * (worker D) will tie horizon-pip to fork-event subscription. For now the
- * pip slot is here but unfired; it ties cleanly to a ref handle that can be
- * driven from a parent without re-rendering.
+ *   - Secondary path: one extra polyline (120 samples), same rAF, negligible cost.
+ *   - Event pips: React state array; each pip is one SVG circle + CSS keyframe.
+ *     Pip lifetime: 1.2s. At most 8 pips alive simultaneously (queue drains oldest).
+ *   - Counter overlay: React state, updated every 30s via setTimeout.
+ *   - CRT scan line: absolutely-positioned div, CSS animation only (opacity 0.04).
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useOSSessionStore } from '@/store/osSessionStore'
+import api from '@/api/client'
 import { AMBIENT_PALETTE } from './palette'
 
-interface HorizonProps {
-  /** count of running forks - thinking state when >0 */
-  runningForks: number
-}
+// ── Constants ────────────────────────────────────────────────────────────────
 
-const W = 1440 // viewBox width (high-res for sharp lines on retina)
-const H = 60 // viewBox height
-const MID = H / 2
-const SAMPLES = 240 // polyline resolution
+const W       = 1440  // viewBox width (high-res for retina)
+const H       = 60    // viewBox height
+const MID     = H / 2
+const SAMPLES = 240   // main path polyline resolution
+const SEC_SAMPLES = 120  // secondary path (half res, adequate for blob shape)
+const MAX_PIPS = 8
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 type HorizonMode = 'idle' | 'thinking' | 'streaming'
 
 interface FrameState {
   mode: HorizonMode
   t0: number
-  /** running phase, advanced each rAF tick by mode-specific increment */
   phase: number
+}
+
+interface Pip {
+  id: number
+  x: number          // 0-W
+  type: 'spawn' | 'done'
+  createdAt: number  // performance.now()
+}
+
+interface CounterData {
+  forkCount: number
+  tokPerTurn: number | null
+  costPerTurn: number | null
+}
+
+// ── Mode encoding ─────────────────────────────────────────────────────────────
+
+function modeColor(mode: HorizonMode): string {
+  switch (mode) {
+    case 'streaming': return '#ff6a10'   // hot amber-orange
+    case 'thinking':  return '#ff9a4a'   // bright ember
+    case 'idle':      return '#ffb27a'   // soft ember (= AMBIENT_PALETTE.coreGlow)
+  }
 }
 
 function modeAmplitude(mode: HorizonMode): number {
   switch (mode) {
-    case 'streaming':
-      return 18
-    case 'thinking':
-      return 6
-    case 'idle':
-      return 1.4
+    case 'streaming': return 18
+    case 'thinking':  return 6
+    case 'idle':      return 1.4
   }
 }
 
 function modeFreq(mode: HorizonMode): number {
   switch (mode) {
-    case 'streaming':
-      return 0.045
-    case 'thinking':
-      return 0.022
-    case 'idle':
-      return 0.014
+    case 'streaming': return 0.045
+    case 'thinking':  return 0.022
+    case 'idle':      return 0.014
   }
 }
 
-/**
- * Idle ECG beat. Small bump every ~5.8s. We mirror the heartbeat shape rather
- * than compute it analytically: P-Q-R-S-T over a tiny window, then flat.
- */
+// ── ECG beat (idle only) ──────────────────────────────────────────────────────
+
 function ecgBeat(elapsedSec: number): number {
   const period = 5.8
   const tau = elapsedSec % period
-  // ECG visible window: 0 .. 0.9s. Otherwise flat baseline.
   if (tau > 0.9) return 0
-  // Five Gaussians with alternating polarity for the QRS-T shape.
-  const beats: Array<[centre: number, height: number, sigma: number]> = [
-    [0.10, 0.5, 0.04], // P
-    [0.30, -1.6, 0.022], // Q
-    [0.36, 9.0, 0.014], // R (the spike)
-    [0.42, -3.2, 0.025], // S
-    [0.66, 1.2, 0.06], // T
+  const beats: Array<[number, number, number]> = [
+    [0.10,  0.5, 0.040],  // P
+    [0.30, -1.6, 0.022],  // Q
+    [0.36,  9.0, 0.014],  // R (spike)
+    [0.42, -3.2, 0.025],  // S
+    [0.66,  1.2, 0.060],  // T
   ]
   let v = 0
   for (const [centre, height, sigma] of beats) {
@@ -92,85 +105,227 @@ function ecgBeat(elapsedSec: number): number {
   return v
 }
 
-function buildPath(mode: HorizonMode, phase: number, elapsedSec: number): string {
-  const amp = modeAmplitude(mode)
-  const freq = modeFreq(mode)
+// ── Path builders ─────────────────────────────────────────────────────────────
+
+function buildMainPath(mode: HorizonMode, phase: number, elapsedSec: number): string {
+  const amp      = modeAmplitude(mode)
+  const freq     = modeFreq(mode)
   const idleBeat = mode === 'idle' ? ecgBeat(elapsedSec) : 0
 
   let d = ''
   for (let i = 0; i <= SAMPLES; i++) {
-    const x = (i / SAMPLES) * W
-    // base waveform: sin + a smaller sin at higher freq for organic feel
-    const wave = Math.sin(i * freq + phase) * amp +
-      (mode === 'streaming' ? Math.sin(i * freq * 2.7 + phase * 1.3) * amp * 0.35 : 0)
-    const y = MID - wave - idleBeat * 1.4
-    d += i === 0 ? `M ${x.toFixed(2)} ${y.toFixed(2)}` : ` L ${x.toFixed(2)} ${y.toFixed(2)}`
+    const x    = (i / SAMPLES) * W
+    const wave = Math.sin(i * freq + phase) * amp
+      + (mode === 'streaming' ? Math.sin(i * freq * 2.7 + phase * 1.3) * amp * 0.35 : 0)
+    const y    = MID - wave - idleBeat * 1.4
+    d += i === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`
   }
   return d
 }
 
-export function Horizon({ runningForks }: HorizonProps) {
-  const pathRef = useRef<SVGPathElement | null>(null)
-  const stateRef = useRef<FrameState>({
-    mode: 'idle',
-    t0: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+/** Secondary blob path: low amplitude wave offset 14px below midline,
+ *  opacity driven by fork count in the parent. */
+function buildSecondaryPath(phase: number, forks: number): string {
+  const amp  = Math.min(4, 1 + forks * 0.9)   // 1px at 0 forks → 4px at 3+ forks
+  const freq = 0.018
+  const BASE = MID + 14
+
+  let d = ''
+  for (let i = 0; i <= SEC_SAMPLES; i++) {
+    const x = (i / SEC_SAMPLES) * W
+    const y = BASE - Math.sin(i * freq + phase * 0.7) * amp
+    d += i === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`
+  }
+  return d
+}
+
+// ── Format helpers ────────────────────────────────────────────────────────────
+
+function fmtTok(n: number | null): string {
+  if (n === null || n === 0) return '—'
+  if (n >= 1000) return `${Math.round(n / 100) / 10}k`
+  return String(Math.round(n))
+}
+
+function fmtCost(n: number | null): string {
+  if (n === null || n === 0) return '—'
+  return `$${n.toFixed(4)}`
+}
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+interface HorizonProps {
+  runningForks: number
+  tokPerTurn?: number | null
+  costPerTurn?: number | null
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function Horizon({ runningForks, tokPerTurn, costPerTurn }: HorizonProps) {
+  const mainPathRef = useRef<SVGPathElement | null>(null)
+  const secPathRef  = useRef<SVGPathElement | null>(null)
+  const stateRef    = useRef<FrameState>({
+    mode:  'idle',
+    t0:    typeof performance !== 'undefined' ? performance.now() : Date.now(),
     phase: 0,
   })
+  const prevForksRef = useRef(runningForks)
+
   const status = useOSSessionStore((s) => s.status)
 
-  // Mode selection: streaming wins, else thinking if any running forks, else idle.
+  // ── Pips state ──────────────────────────────────────────────────────────────
+  const [pips, setPips] = useState<Pip[]>([])
+  const pipIdRef = useRef(0)
+
+  const addPip = useCallback((type: 'spawn' | 'done') => {
+    const id = ++pipIdRef.current
+    const x  = 80 + Math.random() * (W - 160)   // avoid edges
+    setPips((prev) => {
+      const next = [...prev, { id, x, type, createdAt: performance.now() }]
+      return next.length > MAX_PIPS ? next.slice(next.length - MAX_PIPS) : next
+    })
+    // Auto-remove after animation (1.4s)
+    setTimeout(() => {
+      setPips((prev) => prev.filter((p) => p.id !== id))
+    }, 1400)
+  }, [])
+
+  // Emit pips when fork count changes
   useEffect(() => {
-    if (status === 'streaming') stateRef.current.mode = 'streaming'
-    else if (runningForks > 0) stateRef.current.mode = 'thinking'
-    else stateRef.current.mode = 'idle'
+    const prev = prevForksRef.current
+    if (runningForks > prev) {
+      for (let i = 0; i < runningForks - prev; i++) addPip('spawn')
+    } else if (runningForks < prev) {
+      for (let i = 0; i < prev - runningForks; i++) addPip('done')
+    }
+    prevForksRef.current = runningForks
+  }, [runningForks, addPip])
+
+  // ── Counter overlay state ────────────────────────────────────────────────────
+  // Sourced from props (parent already polls /api/ops/metrics). Falls back to
+  // a local 30s poll if props not passed.
+  const [counter, setCounter] = useState<CounterData>({
+    forkCount:  runningForks,
+    tokPerTurn: tokPerTurn ?? null,
+    costPerTurn: costPerTurn ?? null,
+  })
+
+  // Keep fork count in sync with prop
+  useEffect(() => {
+    setCounter((c) => ({ ...c, forkCount: runningForks }))
+  }, [runningForks])
+
+  // Sync tok/cost from props when parent provides them
+  useEffect(() => {
+    if (tokPerTurn !== undefined || costPerTurn !== undefined) {
+      setCounter((c) => ({
+        ...c,
+        tokPerTurn:  tokPerTurn  ?? c.tokPerTurn,
+        costPerTurn: costPerTurn ?? c.costPerTurn,
+      }))
+    }
+  }, [tokPerTurn, costPerTurn])
+
+  // Fallback: if parent doesn't supply tok/cost, poll ourselves every 30s
+  useEffect(() => {
+    if (tokPerTurn !== undefined && costPerTurn !== undefined) return // parent handles it
+    let cancelled = false
+    let timer: number
+
+    const tick = async () => {
+      try {
+        const { data } = await api.get('/ops/metrics')
+        if (cancelled) return
+        const te = data?.turn_economics ?? {}
+        setCounter((c) => ({
+          ...c,
+          tokPerTurn:  te.tokens_per_turn_avg ?? c.tokPerTurn,
+          costPerTurn: te.cost_per_turn_usd_24h ?? c.costPerTurn,
+        }))
+      } catch { /* ignore */ }
+      if (!cancelled) timer = window.setTimeout(tick, 30_000)
+    }
+
+    tick()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [tokPerTurn, costPerTurn])
+
+  // ── Mode selection ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (status === 'streaming')   stateRef.current.mode = 'streaming'
+    else if (runningForks > 0)    stateRef.current.mode = 'thinking'
+    else                          stateRef.current.mode = 'idle'
   }, [status, runningForks])
 
+  // ── rAF loop ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     const reducedMotion =
       typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
     if (reducedMotion) {
-      // Static flat line.
-      if (pathRef.current) {
-        pathRef.current.setAttribute('d', `M 0 ${MID} L ${W} ${MID}`)
-      }
+      mainPathRef.current?.setAttribute('d', `M 0 ${MID} L ${W} ${MID}`)
       return
     }
 
-    let raf = 0
+    let raf  = 0
     let lastT = performance.now()
 
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick)
       if (document.hidden) return
-      const dt = Math.min(64, now - lastT) // clamp huge gaps (tab return)
+
+      const dt = Math.min(64, now - lastT)
       lastT = now
       const s = stateRef.current
-      // phase advance scales with mode and dt
+
       const phaseSpeed = s.mode === 'streaming' ? 0.012 : s.mode === 'thinking' ? 0.006 : 0.0028
       s.phase += phaseSpeed * dt
+
       const elapsedSec = (now - s.t0) / 1000
-      if (pathRef.current) {
-        pathRef.current.setAttribute('d', buildPath(s.mode, s.phase, elapsedSec))
+
+      // Main path: update d attribute + stroke color
+      if (mainPathRef.current) {
+        mainPathRef.current.setAttribute('d', buildMainPath(s.mode, s.phase, elapsedSec))
+        mainPathRef.current.setAttribute('stroke', modeColor(s.mode))
+      }
+
+      // Secondary path: update d attribute (opacity set via style prop, not here)
+      if (secPathRef.current) {
+        secPathRef.current.setAttribute('d', buildSecondaryPath(s.phase, runningForks))
       }
     }
+
     raf = window.requestAnimationFrame(tick)
     return () => window.cancelAnimationFrame(raf)
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])   // intentionally empty — stateRef.current is mutated, runningForks read live
+
+  // ── Secondary path opacity ───────────────────────────────────────────────────
+  const secOpacity = runningForks === 0 ? 0 : Math.min(0.45, 0.12 + runningForks * 0.11)
+
+  // ── Counter visibility ───────────────────────────────────────────────────────
+  const showCounter = counter.forkCount > 0 || counter.tokPerTurn !== null || counter.costPerTurn !== null
 
   return (
     <div
       aria-hidden
-      className="ambient-horizon sticky top-0 z-50 w-full"
+      className="ambient-horizon"
       style={{
+        position: 'relative',
         height: 60,
         background: 'rgba(6,7,10,0.94)',
         borderBottom: `1px solid rgba(255,178,122,0.10)`,
         backdropFilter: 'blur(6px)',
         WebkitBackdropFilter: 'blur(6px)',
+        overflow: 'hidden',
       }}
     >
+      {/* ── SVG canvas ── */}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
@@ -178,8 +333,22 @@ export function Horizon({ runningForks }: HorizonProps) {
         height="100%"
         style={{ display: 'block' }}
       >
+        {/* Secondary fork-density path */}
         <path
-          ref={pathRef}
+          ref={secPathRef}
+          fill="none"
+          stroke={AMBIENT_PALETTE.coreGlow}
+          strokeWidth={1.0}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={secOpacity}
+          style={{ transition: 'opacity 800ms ease' }}
+          d={`M 0 ${MID + 14} L ${W} ${MID + 14}`}
+        />
+
+        {/* Main oscilloscope path */}
+        <path
+          ref={mainPathRef}
           fill="none"
           stroke={AMBIENT_PALETTE.coreGlow}
           strokeWidth={1.2}
@@ -188,7 +357,75 @@ export function Horizon({ runningForks }: HorizonProps) {
           opacity={0.78}
           d={`M 0 ${MID} L ${W} ${MID}`}
         />
+
+        {/* Event pip circles */}
+        {pips.map((pip) => (
+          <circle
+            key={pip.id}
+            cx={pip.x / (W / 100) + '%'}
+            cy={MID}
+            r={3}
+            fill={pip.type === 'spawn' ? '#ff9a4a' : '#22c55e'}
+            style={{
+              animation: 'horizon-pip-decay 1.2s ease-out forwards',
+            }}
+          />
+        ))}
       </svg>
+
+      {/* ── Right-side counter overlay ── */}
+      {showCounter && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 12,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontSize: 10,
+            color: 'rgba(255,255,255,0.38)',
+            letterSpacing: '0.04em',
+            fontVariantNumeric: 'tabular-nums',
+            pointerEvents: 'none',
+            userSelect: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {counter.forkCount > 0 ? `${counter.forkCount} fork${counter.forkCount !== 1 ? 's' : ''}` : ''}
+          {counter.forkCount > 0 && (counter.tokPerTurn !== null || counter.costPerTurn !== null) ? '  ·  ' : ''}
+          {counter.tokPerTurn !== null ? `${fmtTok(counter.tokPerTurn)} tok` : ''}
+          {counter.tokPerTurn !== null && counter.costPerTurn !== null ? '  ·  ' : ''}
+          {counter.costPerTurn !== null ? `${fmtCost(counter.costPerTurn)}/turn` : ''}
+        </div>
+      )}
+
+      {/* ── CRT scan line ── */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          height: 1,
+          background: 'rgba(255,255,255,0.04)',
+          animation: 'horizon-crt-scan 4s linear infinite',
+          pointerEvents: 'none',
+          willChange: 'transform',
+        }}
+      />
+
+      {/* ── Keyframes ── */}
+      <style>{`
+        @keyframes horizon-pip-decay {
+          0%   { opacity: 0.9; r: 3; }
+          40%  { opacity: 0.7; r: 5; }
+          100% { opacity: 0;   r: 2; }
+        }
+        @keyframes horizon-crt-scan {
+          0%   { top: -1px; }
+          100% { top: 61px; }
+        }
+      `}</style>
     </div>
   )
 }
