@@ -1,25 +1,24 @@
 /**
  * CortexAmbient - "the workshop".
  *
- * Round-3 redispatch (fork_mowtxg3d_302865). Replaces the round-1/2 R3F
- * orb-and-particles scene with the workshop layout from the validated spec
- * at ~/ecodiaos/drafts/cortex-ambient-design-spec-2026-05-08.md.
+ * Phase 1 upgrade (fork_mp3mmr0r_cf0ea6): three-column CSS grid layout
+ * + Panel component + right rail wired with live Forks + Threads panels.
  *
- * Structure (single vertical scroll, same desktop and mobile):
+ * Layout (desktop >= 1280px):
+ *   ROW 1 (60px)   HORIZON              full-width breathing oscilloscope
+ *   ROW 2 (1fr)    LEFT RAIL (220px) | CHAT (flex-1) | RIGHT RAIL (280px)
  *
- *   HORIZON              breathing oscilloscope (sticky-top)
- *   IDENTITY-BAR         EcodiaOS / clock / audio toggle (sticky-under-horizon)
- *   CHAT                 the lead readable surface (own scroll)
- *   INPUT                sticky-bottom of chat
- *   HANDS / FORKS        list of running fork cards
- *   WORKING MEMORY       status_board priority rows
- *   FOOTER               DAO marks
+ * Chat column (flex column, overflow hidden):
+ *   PresenceHeader → ChatLog (flex:1, own scroll) → ChatInputPanel → Footer
  *
- * No three.js. No <Canvas>. No particle field. The horizon is the only
- * continuous-motion element on the page and it's bounded to a 60px band.
+ * Right rail panels (Phase 1):
+ *   FORKS   — live fork cards (ForksStrip)
+ *   THREADS — status_board rows (StatusThreads, Phase 2 will swap for useWorkingSet)
  *
- * Spec sections referenced inline. Worker C/D/E follow this scaffold for
- * live-data wiring, motion polish, and visual verify.
+ * Mobile (< 1280px): StripRow (.ambient-bottom-stack) visible, rails still render
+ * but are narrow — Phase 3 will add responsive collapse.
+ *
+ * No three.js. No <Canvas>. No particle field.
  */
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -32,53 +31,20 @@ import { ForksStrip } from './ForksStrip'
 import { StatusThreads } from './StatusThreads'
 import { StripRow } from './StripRow'
 import { Footer } from './Footer'
+import { Panel } from './Panel'
 import { useStatusBoard } from './useStatusBoard'
 import { useForks } from './useForks'
 import { AMBIENT_PALETTE } from './palette'
 
-interface SectionProps {
-  label: string
-  children: React.ReactNode
-  /** mute the label visually when the body is empty / quiet */
-  dim?: boolean
-}
-
-function Section({ label, children, dim = false }: SectionProps) {
-  return (
-    <section className="ambient-section" style={{ paddingTop: 20, paddingBottom: 4 }}>
-      <div
-        className="px-4"
-        style={{
-          maxWidth: 1120,
-          margin: '0 auto',
-          color: AMBIENT_PALETTE.textDim,
-          fontFamily: "'Inter', system-ui, sans-serif",
-          fontSize: 10,
-          letterSpacing: '0.22em',
-          textTransform: 'uppercase',
-          opacity: dim ? 0.5 : 0.85,
-          marginBottom: 8,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ maxWidth: 1120, margin: '0 auto' }}>{children}</div>
-    </section>
-  )
-}
-
 export default function CortexAmbientPage() {
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [params] = useSearchParams()
-  // Reserved for future legend/density toggle. Read but unused for now.
   void params
 
   const statusRows = useStatusBoard()
   const { forks, runningCount } = useForks()
 
-  // Ctrl+. toggles audio-tray icon state (audio engine itself dropped this
-  // round per spec §J; the toggle remains so the visual affordance is still
-  // there for when audio comes back as a separate /listening-room route).
+  // Ctrl+. toggles audio-tray icon state (audio engine itself is a future /listening-room route)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === '.') {
@@ -97,75 +63,125 @@ export default function CortexAmbientPage() {
         inset: 0,
         background: AMBIENT_PALETTE.base,
         color: AMBIENT_PALETTE.text,
-        overflowY: 'auto',
-        overflowX: 'hidden',
+        display: 'grid',
+        gridTemplateRows: '60px 1fr',
+        gridTemplateColumns: '220px 1fr 280px',
+        height: '100vh',
+        overflow: 'hidden',
       }}
     >
-      <Horizon runningForks={runningCount} />
-
-      <PresenceHeader
-        audioEnabled={audioEnabled}
-        onToggleAudio={() => setAudioEnabled((v) => !v)}
-        forkCount={runningCount}
-      />
-
-      {/* CHAT — the lead surface. Own scroll, document feel.
-          Round-4 (fork_moxykr7k_4cb6b2) Bug 1 fix: chat region is now
-          a min-height container so the empty state reserves visible
-          space and the input + strip-row don't collapse upward. The
-          ChatLog itself ALSO carries a min-height (50vh capped) for the
-          inner scroll surface. Both work together so first-paint reads
-          as a real workshop, not a jammed accordion. */}
-      <div
-        className="ambient-chat-region"
-        style={{
-          paddingTop: 18,
-          minHeight: 'min(62vh, 600px)',
-        }}
-      >
-        <ChatLog />
+      {/* ── ROW 1: Horizon band — spans all three columns ──────────────────── */}
+      <div style={{ gridColumn: '1 / -1', gridRow: 1 }}>
+        <Horizon runningForks={runningCount} />
       </div>
 
-      {/* BOTTOM-STICKY REGION — input + condensed strip-row.
-          Round-4 (fork_moxykr7k_4cb6b2): the input was already sticky-bottom
-          on its own. We wrap input + new StripRow in a single sticky-bottom
-          stack so BOTH stay pinned to viewport bottom on every screen size.
-          Mobile: strip-row collapses to a single horizontally-scrollable line
-          showing "hands · N forks" tags + "working memory · N" + top-priority
-          row name. Desktop (>=1024px): both halves render inline.
-          The full ForksStrip + StatusThreads sections still render below
-          for users who scroll past the chat - this strip is at-a-glance
-          summary, not a replacement. */}
+      {/* ── ROW 2, COL 1: Left rail ─────────────────────────────────────────── */}
       <div
-        className="ambient-bottom-stack"
+        data-rail="left"
         style={{
-          position: 'sticky',
-          bottom: 0,
-          zIndex: 25,
+          gridRow: 2,
+          gridColumn: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '8px 6px',
+          borderRight: '1px solid rgba(255,178,122,0.06)',
         }}
       >
+        {/* Phase 3 will populate with nav / quick-action panels */}
+        <div
+          style={{
+            fontSize: 9,
+            color: 'rgba(255,255,255,0.2)',
+            letterSpacing: '0.2em',
+            textAlign: 'center',
+            padding: '16px 0',
+            textTransform: 'uppercase',
+            fontFamily: "'Inter', system-ui, sans-serif",
+          }}
+        >
+          panels coming in phase 3
+        </div>
+      </div>
+
+      {/* ── ROW 2, COL 2: Chat column ────────────────────────────────────────── */}
+      <div
+        style={{
+          gridRow: 2,
+          gridColumn: 2,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <PresenceHeader
+          audioEnabled={audioEnabled}
+          onToggleAudio={() => setAudioEnabled((v) => !v)}
+          forkCount={runningCount}
+        />
+
+        {/* ChatLog — flex:1, own internal scroll surface */}
+        <div
+          className="ambient-chat-region ambient-chatlog-scroll"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+          }}
+        >
+          <ChatLog />
+        </div>
+
+        {/* Input — sits at the bottom of the flex column naturally */}
         <ChatInputPanel />
-        <StripRow forks={forks} rows={statusRows} />
+
+        {/* StripRow — condensed summary, hidden on desktop (>= 1280px) */}
+        <div className="ambient-bottom-stack">
+          <StripRow forks={forks} rows={statusRows} />
+        </div>
+
+        <Footer />
       </div>
 
-      {/* HANDS / FORKS — what the entity is doing right now.
-          Full detail. Sits below the sticky bottom-stack so users who
-          scroll past the chat see the live cards. */}
-      <Section label={`hands · ${forks.length} fork${forks.length === 1 ? '' : 's'}`} dim={forks.length === 0}>
-        <ForksStrip forks={forks} layout="horizontal" />
-      </Section>
+      {/* ── ROW 2, COL 3: Right rail ─────────────────────────────────────────── */}
+      <div
+        data-rail="right"
+        style={{
+          gridRow: 2,
+          gridColumn: 3,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '8px 6px',
+          borderLeft: '1px solid rgba(255,178,122,0.06)',
+        }}
+      >
+        {/* Panel 1: FORKS — live fork cards */}
+        <Panel
+          id="forks"
+          label="FORKS"
+          count={runningCount > 0 ? runningCount : forks.length}
+          pulse={true}
+          maxHeight={240}
+          defaultCollapsed={false}
+        >
+          <ForksStrip forks={forks} layout="vertical" />
+        </Panel>
 
-      {/* WORKING MEMORY / STATUS_BOARD — what's on the entity's mind. */}
-      <Section label={`working memory · ${statusRows.length} thread${statusRows.length === 1 ? '' : 's'}`} dim={statusRows.length === 0}>
-        <StatusThreads rows={statusRows} />
-      </Section>
+        {/* Panel 2: THREADS — status_board rows (Phase 2 will replace with useWorkingSet) */}
+        <Panel
+          id="threads"
+          label="THREADS"
+          count={statusRows.length}
+          pulse={true}
+          maxHeight={200}
+          defaultCollapsed={false}
+        >
+          <StatusThreads rows={statusRows} />
+        </Panel>
 
-      <Footer />
+        {/* Panels 3-6 (Observer/Perception/Inbox/Restarts) — Phase 2, not yet */}
+      </div>
 
-      {/* Page-local keyframes shared by chat input ribbon, stream dot,
-          send-button spinner, cursor and "new" pill. Kept inline so the
-          ambient surface is self-contained and these don't leak into the
-          rest of the admin UI. */}
+      {/* ── Page-local keyframes (self-contained, no leakage) ──────────────── */}
       <style>{`
         @keyframes ambient-pulse {
           0%, 100% { opacity: 0.45; transform: scale(0.85); }
@@ -186,6 +202,17 @@ export default function CortexAmbientPage() {
           0%, 100% { box-shadow: 0 0 6px rgba(239,68,68,0.20); }
           50%      { box-shadow: 0 0 18px rgba(239,68,68,0.50); }
         }
+        @keyframes panel-pulse {
+          0%, 100% { opacity: 0.45; transform: scale(0.85); }
+          50%      { opacity: 1;    transform: scale(1.15); }
+        }
+
+        /* StripRow hidden on desktop — right rail provides the same info */
+        @media (min-width: 1280px) {
+          .ambient-bottom-stack { display: none !important; }
+        }
+
+        /* Scrollbar styling for rail columns and chat region */
         .ambient-chatlog-scroll::-webkit-scrollbar { width: 6px; }
         .ambient-chatlog-scroll::-webkit-scrollbar-track { background: transparent; }
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb {
@@ -195,9 +222,8 @@ export default function CortexAmbientPage() {
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb:hover {
           background: rgba(255,178,122,0.45);
         }
-        /* Markdown rendering inside assistant bubbles. Tight, readable,
-           ember-themed. Mirrors the cortex-prose surface used in the
-           Cortex route but tuned darker for the ambient page. */
+
+        /* Markdown rendering inside assistant bubbles */
         .ambient-md p { margin: 0; }
         .ambient-md p + p { margin-top: 0.55em; }
         .ambient-md ul, .ambient-md ol { margin: 0.4em 0; padding-left: 1.2em; }
