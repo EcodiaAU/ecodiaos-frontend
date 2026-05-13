@@ -93,24 +93,19 @@ export function Panel({
       ref={rootRef}
       data-panel-id={id}
       style={{
-        border: '1px solid rgba(212,175,55,0.10)',
-        borderRadius: 6,
-        // Phase 11 border-merge: -1 margin collapses adjacent panel borders into
-        // a single shared line instead of two stacked 1px lines with a gap.
-        marginBottom: -1,
+        // Single shared hairline between rail panels — no outer box, no overlap hack.
+        // Rail container supplies left/right edges; we only contribute the bottom rule.
+        borderBottom: '1px solid rgba(212,175,55,0.10)',
         position: 'relative',
-        overflow: 'hidden',
-        transition: 'border-color 200ms ease, box-shadow 200ms ease, z-index 0ms',
+        transition: 'background 200ms ease',
       }}
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLDivElement
-        el.style.borderColor = 'rgba(212,175,55,0.22)'
-        el.style.zIndex = '2'
+        el.style.background = 'rgba(212,175,55,0.025)'
       }}
       onMouseLeave={(e) => {
         const el = e.currentTarget as HTMLDivElement
-        el.style.borderColor = 'rgba(212,175,55,0.10)'
-        el.style.zIndex = '1'
+        el.style.background = 'transparent'
       }}
     >
       {/* Header */}

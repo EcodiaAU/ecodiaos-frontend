@@ -163,7 +163,7 @@ function ForkRow({ fork, onAfterAbort }: { fork: ForkSnapshot; onAfterAbort: () 
           <div className="text-[9px] uppercase tracking-wide opacity-70">report</div>
           <div className="mt-0.5 leading-relaxed">{fork.result}</div>
           {fork.next_step && (
-            <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: 'rgba(46,204,113,0.25)' }}>
+            <div className="mt-2">
               <span className="text-[9px] uppercase tracking-wide opacity-70">next step</span>
               <div className="mt-0.5">{fork.next_step}</div>
             </div>

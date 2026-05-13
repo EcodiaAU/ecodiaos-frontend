@@ -207,7 +207,6 @@ function ForkCard({ fork }: { fork: ForkRow }) {
       {expanded && hasBrief && (
         <div
           className="px-4 pb-4"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
         >
           <p
             className="text-[13.5px] leading-relaxed pt-3"

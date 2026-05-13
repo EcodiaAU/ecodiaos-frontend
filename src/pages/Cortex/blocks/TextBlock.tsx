@@ -102,7 +102,7 @@ export function TextBlock({ block }: { block: TextBlockType }) {
             if (match?.[1] === 'html' && isBlock && codeStr.includes('<')) {
               return (
                 <div className="my-3 rounded-xl overflow-hidden border border-white/[0.08]" style={{ background: '#1a1a1a' }}>
-                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.06]" style={{ background: '#2a2a2a' }}>
+                  <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: '#2a2a2a' }}>
                     <div className="flex gap-1.5">
                       <div className="w-3 h-3 rounded-full" style={{ background: '#ff5f57' }} />
                       <div className="w-3 h-3 rounded-full" style={{ background: '#febc2e' }} />
@@ -130,7 +130,7 @@ export function TextBlock({ block }: { block: TextBlockType }) {
             if (match && isBlock) {
               return (
                 <div className="my-3 rounded-xl overflow-hidden" style={{ background: '#0f172a' }}>
-                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06]">
+                  <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="font-mono text-[10px] text-slate-500 uppercase tracking-widest">
                       {match[1]}
                     </span>
@@ -155,7 +155,7 @@ export function TextBlock({ block }: { block: TextBlockType }) {
             if (isBlock) {
               return (
                 <div className="my-3 rounded-xl overflow-hidden" style={{ background: '#0f172a' }}>
-                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06]">
+                  <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="font-mono text-[10px] text-slate-600 uppercase tracking-widest">code</span>
                     <CopyButton text={codeStr} />
                   </div>

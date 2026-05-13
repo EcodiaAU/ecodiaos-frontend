@@ -328,7 +328,7 @@ export default function CortexAmbientPage() {
             style={{
               gridColumn: '1 / -1', gridRow: 1,
               position: 'relative',
-              borderBottom: '1px solid rgba(212,175,55,0.12)',
+              borderBottom: '1px solid rgba(212,175,55,0.08)',
               background: 'rgba(0,0,0,0.30)',
               overflow: 'hidden',
             }}
@@ -550,7 +550,7 @@ export default function CortexAmbientPage() {
           overflowY: 'auto',
           overflowX: 'hidden',
           padding: '8px 6px',
-          borderRight: '1px solid rgba(255,178,122,0.06)',
+          borderRight: '1px solid rgba(212,175,55,0.08)',
         }}
       >
         {/* ─────────────────────────────────────────────────────── */}
@@ -1272,7 +1272,7 @@ export default function CortexAmbientPage() {
           overflowY: 'auto',
           overflowX: 'hidden',
           padding: '8px 6px',
-          borderLeft: '1px solid rgba(255,178,122,0.06)',
+          borderLeft: '1px solid rgba(212,175,55,0.08)',
         }}
       >
 
@@ -1978,11 +1978,13 @@ export default function CortexAmbientPage() {
         [data-chip-strip] > *:not(:first-child) {
           border-left: 1px solid rgba(212,175,55,0.09);
         }
-        /* Rail panels: collapse inter-panel gap, overlap borders for one shared line */
-        [data-rail="left"] > * { margin-bottom: 0 !important; }
-        [data-rail="left"] > * + * { margin-top: -1px; }
-        [data-rail="right"] > * { margin-bottom: 0 !important; }
-        [data-rail="right"] > * + * { margin-top: -1px; }
+        /* Rail panels: each panel owns only its bottom border, so adjacent panels
+           share a single hairline naturally — no overlap hack, no z-index races. */
+        [data-rail="left"] > *,
+        [data-rail="right"] > * { margin: 0 !important; }
+        /* Last panel: drop its bottom rule so the rail end is clean. */
+        [data-rail="left"] > *:last-child,
+        [data-rail="right"] > *:last-child { border-bottom: none !important; }
 
         /* StripRow hidden on desktop — right rail provides the same info */
         @media (min-width: 1280px) {

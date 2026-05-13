@@ -166,7 +166,6 @@ function StatusRowItem({ row }: { row: StatusRow }) {
       {expanded && hasDetail && (
         <div
           className="px-4 pb-4 flex flex-col gap-2"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
         >
           {row.next_action && (
             <div className="pt-3">

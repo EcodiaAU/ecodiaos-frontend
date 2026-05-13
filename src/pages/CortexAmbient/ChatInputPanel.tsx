@@ -258,7 +258,7 @@ export function ChatInputPanel() {
           <div className="relative rounded-md overflow-hidden"
             style={{
               background: 'linear-gradient(180deg, rgba(15,18,24,0.55) 0%, rgba(8,10,14,0.78) 100%)',
-              border: '1px solid rgba(255,178,122,0.22)',
+              border: '1px solid rgba(255,178,122,0.10)',
               boxShadow: isStreaming
                 ? '0 0 32px rgba(255,178,122,0.18), inset 0 0 18px rgba(255,178,122,0.08)'
                 : isRecording
