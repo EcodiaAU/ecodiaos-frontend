@@ -20,6 +20,8 @@ export const AMBIENT_PALETTE = {
   gold: '#d4af37',          // deep warm gold - chip borders, panel dividers, accent lines
   brightAmber: '#f5c518',   // bright gold-yellow - highlights, sparklines
   acidGreen: '#c8f243',     // acid yellow-green - LIVE indicators, active signals
+  sage: '#7a9a5a',          // solarpunk sage green - organic accents, watermarks
+  moss: '#6b8e4e',          // deeper moss - gauge ticks, secondary organic elements
   cyan: '#5ad9c8',      // ecodiaos next_action_by
   amber: '#f0a847',     // tate next_action_by
   violet: '#a47cff',    // client next_action_by

@@ -191,6 +191,19 @@ export default function CortexAmbientPage() {
     return () => clearInterval(t)
   }, [])
 
+  // Phase 9 H4: solar disc pulses for 1.1s when firedCount1h increments
+  const [cronFiring, setCronFiring] = useState(false)
+  const prevFiredRef = useRef(0)
+  useEffect(() => {
+    if (firedCount1h > prevFiredRef.current) {
+      prevFiredRef.current = firedCount1h
+      setCronFiring(true)
+      const t = setTimeout(() => setCronFiring(false), 1100)
+      return () => clearTimeout(t)
+    }
+    prevFiredRef.current = firedCount1h
+  }, [firedCount1h])
+
   // Flash states
   const observerFlash = useFlash(signals)
   const perceptionFlash = useFlash(perceptionEvents)
@@ -247,6 +260,38 @@ export default function CortexAmbientPage() {
           zIndex: 9998,
         }}
       />
+
+      {/* ── H1: Organic solarpunk watermarks — fixed, no pointer events ──────── */}
+      <div aria-hidden style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'hidden' }}>
+        {/* Leaf-vein — top-left corner */}
+        <svg viewBox="0 0 180 180" width={180} height={180} style={{ position: 'absolute', top: 0, left: 0, opacity: 0.06, animation: 'organic-breathe 5.5s ease-in-out infinite' }}>
+          <path d="M20,160 Q50,80 160,20" fill="none" stroke="#7a9a5a" strokeWidth="1.5"/>
+          <path d="M20,160 Q60,100 120,30" fill="none" stroke="#7a9a5a" strokeWidth="1"/>
+          <path d="M20,160 Q40,110 90,45" fill="none" stroke="#7a9a5a" strokeWidth="0.8"/>
+          <path d="M50,140 Q75,105 110,55" fill="none" stroke="#6b8e4e" strokeWidth="0.7"/>
+          <path d="M30,150 Q55,115 95,65" fill="none" stroke="#6b8e4e" strokeWidth="0.6"/>
+          <path d="M70,130 Q88,108 105,80" fill="none" stroke="#7a9a5a" strokeWidth="0.5"/>
+          <circle cx="160" cy="20" r="5" fill="none" stroke="#7a9a5a" strokeWidth="1"/>
+          <circle cx="20" cy="160" r="3.5" fill="#6b8e4e" opacity="0.6"/>
+        </svg>
+        {/* Solar corona — bottom-right corner */}
+        <svg viewBox="0 0 160 160" width={160} height={160} style={{ position: 'absolute', bottom: 0, right: 0, opacity: 0.065, animation: 'organic-breathe 6.5s ease-in-out infinite 1.2s' }}>
+          <circle cx="80" cy="80" r="22" fill="none" stroke="#f5c518" strokeWidth="1.2"/>
+          <circle cx="80" cy="80" r="30" fill="none" stroke="#d4af37" strokeWidth="0.5" strokeDasharray="3 5"/>
+          {[0,30,60,90,120,150,180,210,240,270,300,330].map((deg, i) => {
+            const rad = deg * Math.PI / 180
+            const x1 = 80 + 33 * Math.cos(rad), y1 = 80 + 33 * Math.sin(rad)
+            const len = i % 3 === 0 ? 16 : i % 3 === 1 ? 10 : 6
+            const x2 = 80 + (33 + len) * Math.cos(rad), y2 = 80 + (33 + len) * Math.sin(rad)
+            return <line key={deg} x1={x1.toFixed(1)} y1={y1.toFixed(1)} x2={x2.toFixed(1)} y2={y2.toFixed(1)} stroke="#f5c518" strokeWidth={i % 3 === 0 ? "1.2" : "0.7"}/>
+          })}
+        </svg>
+        {/* Wave — left rail bottom */}
+        <svg viewBox="0 0 220 60" width={220} height={60} style={{ position: 'absolute', bottom: 80, left: 0, opacity: 0.055, animation: 'organic-breathe 7s ease-in-out infinite 0.4s' }}>
+          <path d="M0,30 C18,10 38,50 55,30 C72,10 92,50 110,30 C128,10 148,50 165,30 C182,10 202,50 220,30" fill="none" stroke="#7a9a5a" strokeWidth="1.2"/>
+          <path d="M0,40 C18,22 38,58 55,40 C72,22 92,58 110,40 C128,22 148,58 165,40 C182,22 202,58 220,40" fill="none" stroke="#6b8e4e" strokeWidth="0.7"/>
+        </svg>
+      </div>
 
       {/* ── ROW 1: Combined header — Horizon background + stat chips ─────────── */}
       {(() => {
@@ -463,6 +508,16 @@ export default function CortexAmbientPage() {
             })()}
 
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', gap: 14 }}>
+              {/* H4: Solar disc — pulses amber on each cron fire */}
+              <svg width={20} height={20} viewBox="0 0 20 20" style={{ flexShrink: 0, animation: cronFiring ? 'solar-disc-pulse 1.1s ease-out forwards' : 'none' }}>
+                <circle cx="10" cy="10" r="4.5" fill={cronFiring ? '#f5c518' : '#d4af37'} opacity={cronFiring ? 0.95 : 0.45}/>
+                {[0,45,90,135,180,225,270,315].map((deg) => {
+                  const rad = deg * Math.PI / 180
+                  const x1 = 10 + 6.5 * Math.cos(rad), y1 = 10 + 6.5 * Math.sin(rad)
+                  const x2 = 10 + (deg % 90 === 0 ? 9.2 : 8.2) * Math.cos(rad), y2 = 10 + (deg % 90 === 0 ? 9.2 : 8.2) * Math.sin(rad)
+                  return <line key={deg} x1={x1.toFixed(1)} y1={y1.toFixed(1)} x2={x2.toFixed(1)} y2={y2.toFixed(1)} stroke={cronFiring ? '#f5c518' : '#d4af37'} strokeWidth={deg % 90 === 0 ? '1.4' : '0.9'} opacity={cronFiring ? 0.9 : 0.4}/>
+                })}
+              </svg>
               <span style={{
                 fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.12em',
                 color: blinkOn ? '#c8f243' : 'rgba(200,242,67,0.22)',
@@ -573,6 +628,61 @@ export default function CortexAmbientPage() {
         })()}
 
         {/* ─────────────────────────────────────────────────────── */}
+        {/* Panel H2: SYSTEMS — periodic-table element boxes        */}
+        {/* ─────────────────────────────────────────────────────── */}
+        {(() => {
+          // Derive per-subsystem health colour from live metrics
+          const memOk = opsMetrics.memory_rss_mb == null || opsMetrics.memory_rss_mb < 1400
+          const diskOk = opsMetrics.disk_pct == null || opsMetrics.disk_pct < 85
+          const cacheOk = opsMetrics.cache_hit_ratio_24h == null || opsMetrics.cache_hit_ratio_24h >= 0.45
+          const upOk = opsMetrics.uptime_sec == null || opsMetrics.uptime_sec > 60
+          const systems: Array<{ sym: string; name: string; num: number; color: string; dim?: boolean }> = [
+            { sym: 'Cp', name: 'CPU', num: 1, color: memOk ? '#7a9a5a' : '#ef4444' },
+            { sym: 'Db', name: 'DB', num: 2, color: '#7a9a5a' },
+            { sym: 'Ap', name: 'API', num: 3, color: upOk ? '#7a9a5a' : '#f59e0b' },
+            { sym: 'Kg', name: 'KG', num: 4, color: opsMetrics.git_sha != null ? '#7a9a5a' : '#d4af37' },
+            { sym: 'Ch', name: 'CACHE', num: 5, color: cacheOk ? '#d4af37' : '#ef4444' },
+            { sym: 'Cr', name: 'CRON', num: 6, color: opsMetrics.cron_next_in_sec != null ? '#c8f243' : '#5a6577' },
+            { sym: 'Dk', name: 'DISK', num: 7, color: diskOk ? '#7a9a5a' : '#ef4444' },
+            { sym: 'Mx', name: 'MEM', num: 8, color: memOk ? '#7a9a5a' : '#f59e0b' },
+          ]
+          return (
+            <Panel id="systems" label="SYSTEMS" pulse={false} maxHeight={100} defaultCollapsed={false}>
+              <div style={{ padding: '6px 10px 8px', display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {systems.map((s) => (
+                  <div
+                    key={s.sym}
+                    title={s.name}
+                    style={{
+                      width: 34, height: 38,
+                      border: `1px solid ${s.color}`,
+                      borderRadius: 3,
+                      display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      gap: 0,
+                      background: `${s.color}0d`,
+                      position: 'relative',
+                      cursor: 'default',
+                      opacity: s.dim ? 0.35 : 1,
+                    }}
+                  >
+                    <span style={{ position: 'absolute', top: 2, left: 3, fontFamily: MONO_FONT, fontSize: 7, color: `${s.color}99`, lineHeight: 1 }}>
+                      {s.num}
+                    </span>
+                    <span style={{ fontFamily: "'Oswald','Inter',sans-serif", fontSize: 14, color: s.color, lineHeight: 1, fontWeight: 500 }}>
+                      {s.sym}
+                    </span>
+                    <span style={{ fontFamily: MONO_FONT, fontSize: 6, color: `${s.color}88`, letterSpacing: '0.04em', lineHeight: 1, marginTop: 1 }}>
+                      {s.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )
+        })()}
+
+        {/* ─────────────────────────────────────────────────────── */}
         {/* Panel 8: COST PER TURN — 24h SVG sparkline              */}
         {/* ─────────────────────────────────────────────────────── */}
         {(() => {
@@ -665,7 +775,7 @@ export default function CortexAmbientPage() {
         })()}
 
         {/* ─────────────────────────────────────────────────────── */}
-        {/* Panel 9: CACHE HIT RATIO — SVG donut                   */}
+        {/* Panel 9: CACHE HIT RATIO — analog needle gauge (H3)    */}
         {/* ─────────────────────────────────────────────────────── */}
         {(() => {
           const ratio24 = opsMetrics.cache_hit_ratio_24h
@@ -673,12 +783,43 @@ export default function CortexAmbientPage() {
           const displayRatio = ratio24 ?? ratioWk ?? null
           const pct = displayRatio != null ? Math.round(displayRatio * 100) : null
 
-          // Donut geometry: r=19 centered in 56x56
-          const r = 19, cx = 28, cy = 28, sw = 8
-          const circ = 2 * Math.PI * r
-          const dashArr = displayRatio != null
-            ? `${(displayRatio * circ).toFixed(2)} ${circ.toFixed(2)}`
-            : `0 ${circ.toFixed(2)}`
+          // Gauge geometry — semicircular arc opens upward, center at (60,65)
+          const CX = 60, CY = 65, R = 52, NR = 45
+          const arcPath = `M ${CX - R},${CY} A ${R},${R} 0 0,1 ${CX + R},${CY}`
+
+          // Needle: ratio=0 points left, ratio=1 points right (upper semicircle)
+          const ratio = displayRatio ?? 0
+          const theta = (1 - ratio) * Math.PI
+          const nx = CX + NR * Math.cos(theta)
+          const ny = CY - NR * Math.sin(theta)
+          // Arrowhead (stroke-only, no fill gradient per brief)
+          const dxn = (nx - CX) / NR, dyn = (ny - CY) / NR
+          const b1x = nx - 7 * dxn + 2.8 * (-dyn), b1y = ny - 7 * dyn + 2.8 * dxn
+          const b2x = nx - 7 * dxn - 2.8 * (-dyn), b2y = ny - 7 * dyn - 2.8 * dxn
+
+          // Tick marks every 10%
+          const ticks = Array.from({ length: 11 }, (_, i) => {
+            const a = (1 - i / 10) * Math.PI
+            const inner = i % 5 === 0 ? R - 9 : R - 5
+            return {
+              x1: (CX + R * Math.cos(a)).toFixed(1),
+              y1: (CY - R * Math.sin(a)).toFixed(1),
+              x2: (CX + inner * Math.cos(a)).toFixed(1),
+              y2: (CY - inner * Math.sin(a)).toFixed(1),
+              major: i % 5 === 0,
+            }
+          })
+
+          // Color: sage=good, gold=mid, red=poor
+          const gaugeColor = pct == null ? '#5a6577'
+            : pct >= 75 ? '#7a9a5a'
+            : pct >= 45 ? '#d4af37'
+            : '#ef4444'
+
+          // Active arc: from left endpoint to needle angle
+          const largeArc = ratio > 0.5 ? 1 : 0
+          const aex = (CX + R * Math.cos(theta)).toFixed(1)
+          const aey = (CY - R * Math.sin(theta)).toFixed(1)
 
           return (
             <Panel
@@ -686,63 +827,59 @@ export default function CortexAmbientPage() {
               label="CACHE"
               count={pct != null ? `${pct}% hits` : 'no data'}
               pulse={false}
-              maxHeight={120}
+              maxHeight={130}
               defaultCollapsed={false}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  padding: '6px 10px',
-                }}
-              >
-                {/* donut */}
-                <svg width={56} height={56} viewBox="0 0 56 56" style={{ flexShrink: 0 }}>
-                  {/* background ring */}
-                  <circle
-                    cx={cx} cy={cy} r={r}
-                    fill="none"
-                    stroke="rgba(255,178,122,0.08)"
-                    strokeWidth={sw}
-                  />
-                  {/* hit ring */}
+              <div style={{ padding: '4px 10px 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Gauge SVG — stroke-only, no gradient fills */}
+                <svg width={120} height={70} viewBox="0 0 120 70" style={{ flexShrink: 0, overflow: 'visible' }}>
+                  {/* Background arc */}
+                  <path d={arcPath} fill="none" stroke="rgba(255,178,122,0.08)" strokeWidth="5"/>
+                  {/* Active fill arc */}
                   {displayRatio != null && displayRatio > 0 && (
-                    <circle
-                      cx={cx} cy={cy} r={r}
-                      fill="none"
-                      stroke="#d4af37"
-                      strokeWidth={sw}
-                      strokeDasharray={dashArr}
-                      strokeDashoffset={0}
-                      strokeLinecap="round"
-                      transform={`rotate(-90 ${cx} ${cy})`}
+                    <path
+                      d={`M ${CX - R},${CY} A ${R},${R} 0 ${largeArc},1 ${aex},${aey}`}
+                      fill="none" stroke={gaugeColor} strokeWidth="3" opacity="0.50"
                     />
                   )}
-                  {/* center pct label */}
-                  <text
-                    x={cx} y={cy}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={11}
-                    fontFamily="'JetBrains Mono', ui-monospace, monospace"
-                    fill={pct != null ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.2)'}
-                    style={{ fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {pct != null ? `${pct}%` : '—'}
-                  </text>
+                  {/* Tick marks */}
+                  {ticks.map((t, i) => (
+                    <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2}
+                      stroke={t.major ? 'rgba(212,175,55,0.50)' : 'rgba(212,175,55,0.22)'}
+                      strokeWidth={t.major ? 1.3 : 0.8}/>
+                  ))}
+                  {/* Scale labels */}
+                  <text x={CX - R - 1} y={CY + 11} fontSize="7" fontFamily="'JetBrains Mono',monospace" fill="rgba(255,255,255,0.22)" textAnchor="middle">0</text>
+                  <text x={CX} y={CY - R - 5} fontSize="7" fontFamily="'JetBrains Mono',monospace" fill="rgba(255,255,255,0.22)" textAnchor="middle">50</text>
+                  <text x={CX + R + 1} y={CY + 11} fontSize="7" fontFamily="'JetBrains Mono',monospace" fill="rgba(255,255,255,0.22)" textAnchor="middle">100</text>
+                  {/* Needle */}
+                  {displayRatio != null && (
+                    <>
+                      <line x1={CX} y1={CY} x2={nx.toFixed(1)} y2={ny.toFixed(1)}
+                        stroke={gaugeColor} strokeWidth="1.6" strokeLinecap="round"/>
+                      <polygon
+                        points={`${nx.toFixed(1)},${ny.toFixed(1)} ${b1x.toFixed(1)},${b1y.toFixed(1)} ${b2x.toFixed(1)},${b2y.toFixed(1)}`}
+                        fill={gaugeColor} opacity="0.88"/>
+                    </>
+                  )}
+                  {/* Pivot pin */}
+                  <circle cx={CX} cy={CY} r={3.2} fill="none" stroke={gaugeColor} strokeWidth="1.2" opacity="0.7"/>
+                  <circle cx={CX} cy={CY} r={1.4} fill={gaugeColor} opacity="0.6"/>
                 </svg>
-                {/* legend */}
+                {/* Legend */}
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ ...MONO_CELL, fontSize: 10 }}>24h</span>
-                    <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.82)' }}>
+                  <div style={{ fontFamily: MONO_FONT, fontSize: 20, fontVariantNumeric: 'tabular-nums', color: pct != null ? gaugeColor : 'rgba(255,255,255,0.2)', lineHeight: 1, marginBottom: 7 }}>
+                    {pct != null ? `${pct}%` : '—'}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ ...MONO_CELL, fontSize: 9 }}>24h</span>
+                    <span style={{ fontFamily: MONO_FONT, fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.75)' }}>
                       {ratio24 != null ? `${Math.round(ratio24 * 100)}%` : '—'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ ...MONO_CELL, fontSize: 10 }}>week</span>
-                    <span style={{ fontFamily: MONO_FONT, fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.82)' }}>
+                    <span style={{ ...MONO_CELL, fontSize: 9 }}>wk</span>
+                    <span style={{ fontFamily: MONO_FONT, fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.75)' }}>
                       {ratioWk != null ? `${Math.round(ratioWk * 100)}%` : '—'}
                     </span>
                   </div>
@@ -1926,15 +2063,31 @@ export default function CortexAmbientPage() {
           background: rgba(34,197,94,0.75);
         }
 
-        /* Scrollbar styling for chat region */
+        /* Scrollbar styling for chat region — sage/moss tint (H8) */
         .ambient-chatlog-scroll::-webkit-scrollbar { width: 5px; }
         .ambient-chatlog-scroll::-webkit-scrollbar-track { background: transparent; }
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb {
-          background: rgba(255,178,122,0.22);
+          background: rgba(122,154,90,0.32);
           border-radius: 3px;
         }
         .ambient-chatlog-scroll::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,178,122,0.42);
+          background: rgba(122,154,90,0.55);
+        }
+
+        /* H7: Organic watermark breathing fade — slow, 4-6s cycle */
+        @keyframes organic-breathe {
+          0%   { opacity: 0.04; }
+          45%  { opacity: 0.09; }
+          55%  { opacity: 0.09; }
+          100% { opacity: 0.04; }
+        }
+
+        /* H4: Solar disc pulse — fires once on cron event, 1.1s */
+        @keyframes solar-disc-pulse {
+          0%   { filter: drop-shadow(0 0 0px rgba(245,197,24,0)); opacity: 0.45; }
+          30%  { filter: drop-shadow(0 0 8px rgba(245,197,24,0.9)); opacity: 1; }
+          70%  { filter: drop-shadow(0 0 5px rgba(245,197,24,0.55)); opacity: 0.85; }
+          100% { filter: drop-shadow(0 0 0px rgba(245,197,24,0)); opacity: 0.45; }
         }
 
         /* Markdown rendering inside assistant bubbles */

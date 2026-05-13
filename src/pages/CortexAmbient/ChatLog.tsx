@@ -176,15 +176,17 @@ export function ChatLog() {
   if (recent.length === 0 && !isStreaming && !isError) return null
 
   return (
-    <div className="ambient-chatlog relative w-full px-4">
-      <div className="mx-auto max-w-5xl relative">
-        {/* Scroll surface — flows in document layout, not fixed-overlay */}
+    <div className="ambient-chatlog relative w-full px-4" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="mx-auto max-w-5xl relative" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%' }}>
+        {/* Scroll surface — fills the flex parent so the last message never
+            disappears under the input panel. flex:1 + minHeight:0 is the
+            canonical CSS pattern for a scrollable child inside a flex column. */}
         <div
           ref={scrollRef}
           className="ambient-chatlog-scroll"
           style={{
-            minHeight: 'min(58vh, 560px)',
-            maxHeight: 'min(72vh, 820px)',
+            flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
             // Smooth jump-to-bottom but doesn't smooth ordinary user scrolls.
             scrollBehavior: 'auto',
@@ -196,7 +198,7 @@ export function ChatLog() {
             transition: 'border-color 200ms ease',
           }}
         >
-          <div className="px-5 py-4 space-y-4">
+          <div className="px-5 pt-4 space-y-4" style={{ paddingBottom: 32 }}>
             {recent.map((m) => (
               <div key={m.id} className="ambient-msg-enter">
                 <Bubble role={m.role} content={m.content} />

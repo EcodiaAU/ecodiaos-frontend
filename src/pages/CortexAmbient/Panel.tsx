@@ -156,7 +156,7 @@ export function Panel({
             letterSpacing: '0.22em',
             textTransform: 'uppercase' as const,
             color: 'rgba(255,255,255,0.45)',
-            fontFamily: "'Inter', system-ui, sans-serif",
+            fontFamily: "'Oswald', 'Inter', system-ui, sans-serif",
           }}
         >
           {label}
