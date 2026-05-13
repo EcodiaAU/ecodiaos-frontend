@@ -176,11 +176,13 @@ export function ChatLog() {
   if (recent.length === 0 && !isStreaming && !isError) return null
 
   return (
-    <div className="ambient-chatlog relative w-full px-4" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <div className="mx-auto max-w-5xl relative" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%' }}>
+    <div className="ambient-chatlog relative w-full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="relative" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%' }}>
         {/* Scroll surface — fills the flex parent so the last message never
             disappears under the input panel. flex:1 + minHeight:0 is the
-            canonical CSS pattern for a scrollable child inside a flex column. */}
+            canonical CSS pattern for a scrollable child inside a flex column.
+            Full-bleed: no border or rounded corners — the rails (or screen edge
+            on mobile) bound this region, and the chat input shares its top edge. */}
         <div
           ref={scrollRef}
           className="ambient-chatlog-scroll"
@@ -191,14 +193,11 @@ export function ChatLog() {
             // Smooth jump-to-bottom but doesn't smooth ordinary user scrolls.
             scrollBehavior: 'auto',
             background: 'linear-gradient(180deg, rgba(8,10,14,0.55) 0%, rgba(6,7,10,0.78) 100%)',
-            borderRadius: 6,
-            border: '1px solid rgba(212,175,55,0.14)',
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(212,175,55,0.28) transparent',
-            transition: 'border-color 200ms ease',
           }}
         >
-          <div className="px-5 pt-4 space-y-4" style={{ paddingBottom: 32 }}>
+          <div className="px-3 sm:px-5 pt-4 space-y-4" style={{ paddingBottom: 32 }}>
             {recent.map((m) => (
               <div key={m.id} className="ambient-msg-enter">
                 <Bubble role={m.role} content={m.content} />

@@ -64,10 +64,12 @@ export function ForksStrip({ forks, layout = 'horizontal' }: ForksStripProps) {
   }
 
   if (layout === 'vertical') {
+    // Full-bleed inside Panel: no horizontal padding, no inter-card gap.
+    // Each ForkCard renders its own bottom hairline (last child drops it).
     return (
-      <div className="flex flex-col gap-2 px-4">
+      <div className="flex flex-col ambient-fork-list">
         {sorted.map((f) => (
-          <ForkCard key={f.fork_id} fork={f} />
+          <ForkCard key={f.fork_id} fork={f} fullBleed />
         ))}
       </div>
     )
@@ -82,7 +84,7 @@ export function ForksStrip({ forks, layout = 'horizontal' }: ForksStripProps) {
   )
 }
 
-function ForkCard({ fork }: { fork: ForkRow }) {
+function ForkCard({ fork, fullBleed = false }: { fork: ForkRow; fullBleed?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const statusStr = String(fork.status)
   const { color } = forkStatusColor(statusStr)
@@ -101,14 +103,24 @@ function ForkCard({ fork }: { fork: ForkRow }) {
     complete: 'rgba(255,255,255,0.03)',
   }
 
-  return (
-    <article
-      className="ambient-fork-card w-full rounded-lg overflow-hidden"
-      style={{
+  // In full-bleed mode (inside a Panel), drop the individual card border + radius
+  // so cards stack as continuous rows sharing a hairline with their siblings.
+  const cardStyle: React.CSSProperties = fullBleed
+    ? {
+        background: statusBg[statusStr] ?? 'transparent',
+        borderBottom: `1px solid ${isRunning ? 'rgba(46,204,113,0.16)' : 'rgba(255,255,255,0.05)'}`,
+        transition: 'background 200ms ease',
+      }
+    : {
         background: statusBg[statusStr] ?? 'rgba(255,255,255,0.03)',
         border: `1px solid ${isRunning ? 'rgba(46,204,113,0.18)' : 'rgba(255,255,255,0.07)'}`,
         transition: 'border-color 200ms ease',
-      }}
+      }
+
+  return (
+    <article
+      className={fullBleed ? 'ambient-fork-card w-full' : 'ambient-fork-card w-full rounded-lg overflow-hidden'}
+      style={cardStyle}
       role="article"
       aria-label={`fork ${shortId(fork.fork_id)} ${statusStr}`}
     >
@@ -253,6 +265,8 @@ function ForkCard({ fork }: { fork: ForkRow }) {
           0%, 100% { opacity: 0.45; }
           50% { opacity: 1; }
         }
+        /* Last fork in a full-bleed list drops its bottom rule so the panel ends clean. */
+        .ambient-fork-list > .ambient-fork-card:last-child { border-bottom: none !important; }
         @media (prefers-reduced-motion: reduce) {
           .ambient-fork-card [style*="ambient-fork-pulse"] { animation: none !important; opacity: 0.85 !important; }
         }

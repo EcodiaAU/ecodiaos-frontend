@@ -227,6 +227,41 @@ export default function CortexAmbientPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // ── Mobile responsive state ────────────────────────────────────────────────
+  // Below 900px the chat takes the full viewport and the rails move into
+  // dismissible side sheets triggered from the presence header.
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 900px)').matches : false
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 900px)')
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  const [leftSheetOpen, setLeftSheetOpen] = useState(false)
+  const [rightSheetOpen, setRightSheetOpen] = useState(false)
+  // Close sheets when we resize back up to desktop
+  useEffect(() => {
+    if (!isMobile) {
+      setLeftSheetOpen(false)
+      setRightSheetOpen(false)
+    }
+  }, [isMobile])
+  // ESC closes whichever sheet is open
+  useEffect(() => {
+    if (!leftSheetOpen && !rightSheetOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLeftSheetOpen(false)
+        setRightSheetOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [leftSheetOpen, rightSheetOpen])
+
   // Inbox urgency: total > 0 and oldest is stale (age ends with h or d)
   const inboxIsUrgent = (() => {
     const age = inboxTate.oldestAge ?? inboxCode.oldestAge
@@ -251,9 +286,11 @@ export default function CortexAmbientPage() {
         background: AMBIENT_PALETTE.base,
         color: AMBIENT_PALETTE.text,
         display: 'grid',
-        gridTemplateRows: '44px 1fr',
-        gridTemplateColumns: '220px 1fr 400px',
-        height: '100vh',
+        // Mobile: hide the chip-strip header row and collapse rails into a single chat column.
+        // Rails reappear as overlay side-sheets triggered from the header.
+        gridTemplateRows: isMobile ? '0 1fr' : '44px 1fr',
+        gridTemplateColumns: isMobile ? '1fr' : '220px 1fr 400px',
+        height: '100dvh',
         overflow: 'hidden',
       }}
     >
@@ -331,6 +368,7 @@ export default function CortexAmbientPage() {
               borderBottom: '1px solid rgba(212,175,55,0.08)',
               background: 'rgba(0,0,0,0.30)',
               overflow: 'hidden',
+              display: isMobile ? 'none' : undefined,
             }}
           >
             {/* Chips row — Horizon lives inside its own chip, not as a backdrop */}
@@ -542,16 +580,44 @@ export default function CortexAmbientPage() {
       })()}
 
       {/* ── ROW 2, COL 1: Left rail ─────────────────────────────────────────── */}
+      {/* Mobile: rendered as a fixed-position side-sheet overlay sliding in from the left. */}
+      {isMobile && leftSheetOpen && (
+        <div
+          aria-hidden
+          onClick={() => setLeftSheetOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            zIndex: 60, backdropFilter: 'blur(2px)',
+          }}
+        />
+      )}
       <div
         data-rail="left"
-        style={{
-          gridRow: 2,
-          gridColumn: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '8px 6px',
-          borderRight: '1px solid rgba(212,175,55,0.08)',
-        }}
+        style={
+          isMobile
+            ? {
+                position: 'fixed',
+                top: 0, bottom: 0, left: 0,
+                width: 'min(86vw, 320px)',
+                background: AMBIENT_PALETTE.base,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '8px 6px',
+                borderRight: '1px solid rgba(212,175,55,0.10)',
+                transform: leftSheetOpen ? 'translateX(0)' : 'translateX(-100%)',
+                transition: 'transform 220ms cubic-bezier(0.4,0,0.2,1)',
+                zIndex: 61,
+                visibility: leftSheetOpen ? 'visible' : 'hidden',
+              }
+            : {
+                gridRow: 2,
+                gridColumn: 1,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '8px 6px',
+                borderRight: '1px solid rgba(212,175,55,0.08)',
+              }
+        }
       >
         {/* ─────────────────────────────────────────────────────── */}
         {/* Panel 7: ENERGY BUDGET — weekly token gauge per account  */}
@@ -726,7 +792,7 @@ export default function CortexAmbientPage() {
               label="COST"
               count={avgLabel}
               pulse={false}
-              maxHeight={160}
+              maxHeight={200}
               defaultCollapsed={false}
             >
               <div style={{ padding: '6px 10px 6px' }}>
@@ -1234,16 +1300,23 @@ export default function CortexAmbientPage() {
       <div
         style={{
           gridRow: 2,
-          gridColumn: 2,
+          // Mobile: chat occupies the only column (rails are fixed-position overlays).
+          gridColumn: isMobile ? 1 : 2,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          minWidth: 0,
         }}
       >
         <PresenceHeader
           audioEnabled={audioEnabled}
           onToggleAudio={() => setAudioEnabled((v) => !v)}
           forkCount={runningCount}
+          isMobile={isMobile}
+          onOpenLeftSheet={() => setLeftSheetOpen(true)}
+          onOpenRightSheet={() => setRightSheetOpen(true)}
+          forksRunning={runningCount}
+          statusUnacked={unackedCount}
         />
 
         {/* Part C: overflow: hidden — ChatLog manages its own inner scroll; no outer scrollbox */}
@@ -1264,16 +1337,44 @@ export default function CortexAmbientPage() {
       </div>
 
       {/* ── ROW 2, COL 3: Right rail (400px) ────────────────────────────────── */}
+      {/* Mobile: rendered as a fixed-position side-sheet overlay sliding in from the right. */}
+      {isMobile && rightSheetOpen && (
+        <div
+          aria-hidden
+          onClick={() => setRightSheetOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            zIndex: 60, backdropFilter: 'blur(2px)',
+          }}
+        />
+      )}
       <div
         data-rail="right"
-        style={{
-          gridRow: 2,
-          gridColumn: 3,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '8px 6px',
-          borderLeft: '1px solid rgba(212,175,55,0.08)',
-        }}
+        style={
+          isMobile
+            ? {
+                position: 'fixed',
+                top: 0, bottom: 0, right: 0,
+                width: 'min(92vw, 400px)',
+                background: AMBIENT_PALETTE.base,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '8px 6px',
+                borderLeft: '1px solid rgba(212,175,55,0.10)',
+                transform: rightSheetOpen ? 'translateX(0)' : 'translateX(100%)',
+                transition: 'transform 220ms cubic-bezier(0.4,0,0.2,1)',
+                zIndex: 61,
+                visibility: rightSheetOpen ? 'visible' : 'hidden',
+              }
+            : {
+                gridRow: 2,
+                gridColumn: 3,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '8px 6px',
+                borderLeft: '1px solid rgba(212,175,55,0.08)',
+              }
+        }
       >
 
         {/* ─────────────────────────────────────────────────────────────────── */}

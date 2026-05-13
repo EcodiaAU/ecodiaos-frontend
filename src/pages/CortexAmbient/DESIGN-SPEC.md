@@ -264,4 +264,26 @@ If a competent LLM with a generic prompt could produce this design, I failed. Th
 
 ---
 
+## 12. Cohesion pass — 2026-05-13
+
+Surface-level border-merge + mobile responsive pass. No structural changes to data flow or components — purely visual unification and viewport adaptation.
+
+**Border cohesion:**
+- All rail/header seams unified to a single hairline `rgba(212,175,55,0.08)`.
+- `Panel` no longer draws a full outer box; each panel contributes only a `border-bottom`, so adjacent panels share one shared rule. The previous `marginBottom: -1` overlap hack and the rail-level `margin-top: -1px` collapse are gone.
+- `ChatInputPanel` is flush against `ChatLog` (no gap, no inset rounded box). They share a single `border-top` hairline.
+- `ChatLog` scroll surface is full-bleed — no outer border, no `mx-auto max-w-5xl` cap.
+- `ForksStrip` in vertical (in-Panel) layout is full-bleed: cards lose individual borders/radius/padding/gap and stack as continuous rows sharing one hairline. The last child drops its bottom rule.
+- Panel bodies have invisible scrollbars (Firefox + WebKit) — wheel/touch still scrolls but the green rail-track no longer leaks into individual panels.
+- Code blocks inside `TextBlock` (HTML preview, syntax, fallback) drop the header `border-b`; the outer rounded border + header background shift carry the seam.
+
+**Mobile responsiveness (<= 900px):**
+- Root grid collapses to a single column. Chip strip is hidden. Rails become fixed-position side-sheets with backdrop scrim, sliding in via transform.
+- `PresenceHeader` grows to 44px and surfaces three new mobile-only controls: left hamburger (opens left rail), forks-running pill (live count, opens right rail), right hamburger (opens status panels, badged when there are unacked signals). AEST clock is hidden on mobile.
+- `ChatInputPanel` adds `padding-bottom: env(safe-area-inset-bottom)` so iOS home-indicator never overlaps controls, and textarea font-size is 16px on mobile (prevents iOS Safari auto-zoom on focus).
+- `ChatLog` inner padding tightens from `px-5` to `px-3` on mobile.
+- ESC closes whichever sheet is open; backdrop tap also dismisses.
+
+Trigger breakpoint: `window.matchMedia('(max-width: 900px)')`. State lives in the root `CortexAmbient` component (`isMobile`, `leftSheetOpen`, `rightSheetOpen`).
+
 End of spec.

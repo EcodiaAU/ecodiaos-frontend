@@ -230,15 +230,19 @@ export function ChatInputPanel() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div
-      className="ambient-input w-full px-4 pb-1 pt-2"
+      className="ambient-input w-full"
       style={{
         position: 'relative',
         zIndex: 20,
         background:
           'linear-gradient(180deg, rgba(6,7,10,0) 0%, rgba(6,7,10,0.86) 30%, rgba(6,7,10,0.96) 100%)',
+        // Single shared hairline with the chat log above — no gap, no inset box.
+        borderTop: '1px solid rgba(212,175,55,0.08)',
+        // iOS safe area so the home-indicator never overlaps the input controls.
+        paddingBottom: 'env(safe-area-inset-bottom, 0)',
       }}
     >
-      <div className="mx-auto max-w-5xl">
+      <div className="w-full">
 
         {/* ── Recording Banner ── visible while mic is active ── */}
         <RecordingBanner
@@ -255,10 +259,9 @@ export function ChatInputPanel() {
           onSubmit={onSubmit}
           style={{ position: 'relative' }}
         >
-          <div className="relative rounded-md overflow-hidden"
+          <div className="relative overflow-hidden"
             style={{
               background: 'linear-gradient(180deg, rgba(15,18,24,0.55) 0%, rgba(8,10,14,0.78) 100%)',
-              border: '1px solid rgba(255,178,122,0.10)',
               boxShadow: isStreaming
                 ? '0 0 32px rgba(255,178,122,0.18), inset 0 0 18px rgba(255,178,122,0.08)'
                 : isRecording
@@ -281,7 +284,7 @@ export function ChatInputPanel() {
               </div>
             )}
 
-            <div className="flex items-end gap-2 px-3 py-2.5">
+            <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-2.5">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -312,7 +315,9 @@ export function ChatInputPanel() {
                       : PLACEHOLDERS[placeholderIdx]
                 }
                 rows={1}
-                className="flex-1 resize-none bg-transparent text-[14px] text-white placeholder:text-white/30 focus:outline-none"
+                /* font-size 16px on mobile keeps iOS Safari from auto-zooming the
+                   viewport when the textarea is focused. */
+                className="flex-1 resize-none bg-transparent text-[16px] sm:text-[14px] text-white placeholder:text-white/30 focus:outline-none"
                 style={{ minHeight: '24px', maxHeight: '30vh', lineHeight: '1.45' }}
                 disabled={sending}
               />

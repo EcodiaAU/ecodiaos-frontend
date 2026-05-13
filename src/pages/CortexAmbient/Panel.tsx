@@ -200,16 +200,21 @@ export function Panel({
       {/* Body */}
       <div
         id={`panel-body-${id}`}
+        className="ambient-panel-body"
         style={{
           overflowY: 'auto',
           maxHeight: collapsed ? 0 : maxHeight,
           opacity: collapsed ? 0 : 1,
           pointerEvents: collapsed ? 'none' : 'auto',
           transition: 'max-height 220ms cubic-bezier(0.4,0,0.2,1), opacity 180ms ease',
+          scrollbarWidth: 'none',
         }}
       >
         {children}
       </div>
+      <style>{`
+        .ambient-panel-body::-webkit-scrollbar { width: 0; height: 0; }
+      `}</style>
     </div>
   )
 }

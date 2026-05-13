@@ -15,6 +15,12 @@ interface PresenceHeaderProps {
   audioEnabled: boolean
   onToggleAudio: () => void
   forkCount: number
+  /** Mobile mode shrinks the layout and surfaces rail-toggle buttons. */
+  isMobile?: boolean
+  onOpenLeftSheet?: () => void
+  onOpenRightSheet?: () => void
+  forksRunning?: number
+  statusUnacked?: number
 }
 
 function presenceLabel(forkCount: number): string {
@@ -47,7 +53,16 @@ function formatAEST(now: Date): string {
   }
 }
 
-export function PresenceHeader({ audioEnabled, onToggleAudio, forkCount }: PresenceHeaderProps) {
+export function PresenceHeader({
+  audioEnabled,
+  onToggleAudio,
+  forkCount,
+  isMobile = false,
+  onOpenLeftSheet,
+  onOpenRightSheet,
+  forksRunning = 0,
+  statusUnacked = 0,
+}: PresenceHeaderProps) {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -64,15 +79,41 @@ export function PresenceHeader({ audioEnabled, onToggleAudio, forkCount }: Prese
       className="ambient-presence-header sticky top-0 z-40"
       style={{
         background: 'rgba(6,7,10,0.92)',
-        borderBottom: '1px solid rgba(255,178,122,0.12)',
+        borderBottom: '1px solid rgba(212,175,55,0.08)',
         backdropFilter: 'blur(12px) saturate(1.1)',
         WebkitBackdropFilter: 'blur(12px) saturate(1.1)',
       }}
     >
       <div
-        className="mx-auto flex items-center gap-4 px-4"
-        style={{ maxWidth: 1280, height: 32 }}
+        className="flex items-center px-3"
+        style={{ height: isMobile ? 44 : 32, gap: isMobile ? 10 : 16 }}
       >
+        {/* Mobile-only left hamburger — opens left rail as a side sheet */}
+        {isMobile && onOpenLeftSheet && (
+          <button
+            type="button"
+            onClick={onOpenLeftSheet}
+            aria-label="open systems panel"
+            style={{
+              width: 32, height: 32,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 6,
+              border: '1px solid rgba(255,255,255,0.10)',
+              background: 'transparent',
+              color: 'rgba(255,255,255,0.65)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+              strokeWidth="1.6" strokeLinecap="round">
+              <line x1="2.5" y1="4" x2="13.5" y2="4" />
+              <line x1="2.5" y1="8" x2="13.5" y2="8" />
+              <line x1="2.5" y1="12" x2="13.5" y2="12" />
+            </svg>
+          </button>
+        )}
+
         {/* Left: wordmark + breath line inline */}
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
           <span
@@ -126,21 +167,52 @@ export function PresenceHeader({ audioEnabled, onToggleAudio, forkCount }: Prese
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Clock + audio toggle */}
+        {/* Clock + audio toggle (desktop) / forks-badge + right-rail toggle (mobile) */}
         <div className="flex items-center gap-2">
-          <span
-            style={{
-              fontSize: 11,
-              fontVariantNumeric: 'tabular-nums',
-              color: AMBIENT_PALETTE.textDim,
-              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-              letterSpacing: '0.05em',
-              lineHeight: 1,
-            }}
-            aria-label={`time ${clock} AEST`}
-          >
-            {clock} <span style={{ opacity: 0.6 }}>AEST</span>
-          </span>
+          {!isMobile && (
+            <span
+              style={{
+                fontSize: 11,
+                fontVariantNumeric: 'tabular-nums',
+                color: AMBIENT_PALETTE.textDim,
+                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                letterSpacing: '0.05em',
+                lineHeight: 1,
+              }}
+              aria-label={`time ${clock} AEST`}
+            >
+              {clock} <span style={{ opacity: 0.6 }}>AEST</span>
+            </span>
+          )}
+
+          {/* Mobile-only forks-running pill — taps the right rail open */}
+          {isMobile && forksRunning > 0 && onOpenRightSheet && (
+            <button
+              type="button"
+              onClick={onOpenRightSheet}
+              aria-label={`${forksRunning} forks running, open forks panel`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 8px',
+                borderRadius: 999,
+                border: '1px solid rgba(46,204,113,0.25)',
+                background: 'rgba(46,204,113,0.08)',
+                color: '#5fe89d',
+                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                fontSize: 10,
+                letterSpacing: '0.04em',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <span style={{
+                width: 5, height: 5, borderRadius: 999,
+                background: '#22c55e', boxShadow: '0 0 4px #22c55e',
+              }} />
+              {forksRunning}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onToggleAudio}
@@ -155,10 +227,48 @@ export function PresenceHeader({ audioEnabled, onToggleAudio, forkCount }: Prese
               color: audioEnabled ? AMBIENT_PALETTE.coreGlow : 'rgba(255,255,255,0.40)',
               cursor: 'pointer',
               transition: 'all 200ms ease',
+              flexShrink: 0,
             }}
           >
             {audioEnabled ? <SpeakerOnGlyph /> : <SpeakerOffGlyph />}
           </button>
+
+          {/* Mobile-only right hamburger — opens FORKS / THREADS rail as side sheet */}
+          {isMobile && onOpenRightSheet && (
+            <button
+              type="button"
+              onClick={onOpenRightSheet}
+              aria-label="open status panel"
+              style={{
+                width: 32, height: 32,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 6,
+                border: '1px solid rgba(255,255,255,0.10)',
+                background: 'transparent',
+                color: statusUnacked > 0 ? '#f59e0b' : 'rgba(255,255,255,0.65)',
+                cursor: 'pointer',
+                flexShrink: 0,
+                position: 'relative',
+              }}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+                strokeWidth="1.6" strokeLinecap="round">
+                <circle cx="3.5" cy="4" r="1.2" />
+                <line x1="6.5" y1="4" x2="13.5" y2="4" />
+                <circle cx="3.5" cy="8" r="1.2" />
+                <line x1="6.5" y1="8" x2="13.5" y2="8" />
+                <circle cx="3.5" cy="12" r="1.2" />
+                <line x1="6.5" y1="12" x2="13.5" y2="12" />
+              </svg>
+              {statusUnacked > 0 && (
+                <span style={{
+                  position: 'absolute', top: 3, right: 3,
+                  width: 6, height: 6, borderRadius: 999,
+                  background: '#f59e0b', boxShadow: '0 0 4px #f59e0b',
+                }} />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
