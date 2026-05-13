@@ -1,9 +1,12 @@
 /**
  * NotesPanel — ambient Haiku observer notes for the right rail.
  *
- * Polls /api/ops/notes every 30s via useNotes(). Renders the last 8
- * non-expired notes newest-first as minimal 2-line cards:
- *   - small-caps gold listener label + relative timestamp
+ * Accepts notes data from parent (index.tsx already polls via useNotes)
+ * to avoid double-polling. Falls back to its own internal useNotes if
+ * called standalone.
+ *
+ * Renders the last 8 non-expired notes newest-first as minimal 2-line cards:
+ *   - small-caps colored listener label + relative timestamp
  *   - note text in mono
  *
  * New notes slide in from the bottom with a breathing-fade.
@@ -13,9 +16,8 @@
  */
 
 import { useRef } from 'react'
-import { useNotes } from './useNotes'
+import { useNotes, type DashboardNote } from './useNotes'
 
-// ── Style primitives ──────────────────────────────────────────────────────────
 const MONO = "'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace"
 
 const LISTENER_COLORS: Record<string, string> = {
@@ -37,14 +39,20 @@ function formatAge(iso: string): string {
   return `${Math.floor(secs / 86400)}d`
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-export function NotesPanel() {
-  const { notes } = useNotes(8)
+interface NotesPanelProps {
+  /** Pass notes from parent to avoid double-polling. Falls back to internal hook if omitted. */
+  notes?: DashboardNote[]
+}
+
+export function NotesPanel({ notes: notesProp }: NotesPanelProps) {
+  // Only poll internally if parent didn't supply data
+  const { notes: hookNotes } = useNotes(notesProp !== undefined ? 0 : 8)
+  const notes = notesProp ?? hookNotes
+
   const seenRef = useRef<Set<string>>(new Set())
 
   return (
     <>
-      {/* Keyframes injected once */}
       <style>{`
         @keyframes note-slide-in {
           from { opacity: 0; transform: translateY(6px); }

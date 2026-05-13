@@ -18,6 +18,9 @@ export function useNotes(limit = 8): { notes: DashboardNote[]; newCount: number 
   const mountedRef = useRef(true)
 
   useEffect(() => {
+    // limit=0 is a sentinel meaning "parent is supplying data, skip polling"
+    if (limit === 0) return
+
     mountedRef.current = true
 
     const fetchNotes = async () => {

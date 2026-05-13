@@ -1858,7 +1858,7 @@ export default function CortexAmbientPage() {
             maxHeight={320}
             defaultCollapsed={false}
           >
-            <NotesPanel />
+            <NotesPanel notes={notes} />
           </Panel>
         </div>
       </div>

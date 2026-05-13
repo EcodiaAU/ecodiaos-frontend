@@ -95,15 +95,22 @@ export function Panel({
       style={{
         border: '1px solid rgba(212,175,55,0.10)',
         borderRadius: 6,
-        marginBottom: 4,
+        // Phase 11 border-merge: -1 margin collapses adjacent panel borders into
+        // a single shared line instead of two stacked 1px lines with a gap.
+        marginBottom: -1,
+        position: 'relative',
         overflow: 'hidden',
-        transition: 'border-color 200ms ease, box-shadow 200ms ease',
+        transition: 'border-color 200ms ease, box-shadow 200ms ease, z-index 0ms',
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(212,175,55,0.22)'
+        const el = e.currentTarget as HTMLDivElement
+        el.style.borderColor = 'rgba(212,175,55,0.22)'
+        el.style.zIndex = '2'
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(212,175,55,0.10)'
+        const el = e.currentTarget as HTMLDivElement
+        el.style.borderColor = 'rgba(212,175,55,0.10)'
+        el.style.zIndex = '1'
       }}
     >
       {/* Header */}
