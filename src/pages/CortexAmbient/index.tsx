@@ -25,6 +25,7 @@
  */
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useWebSocket } from '@/hooks/useWebSocket'
 
 import { ChatLog } from './ChatLog'
 import { ChatInputPanel } from './ChatInputPanel'
@@ -162,6 +163,12 @@ function useFlash(value: unknown): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CortexAmbientPage() {
+  // Re-establishes the WebSocket connection lost when Phase 10 (1382b03e) removed
+  // AppShell from the route tree. AppShell was the sole caller of useWebSocket().
+  // Without it no WS connection is made and stream events replay twice (recovery
+  // path + live path both writing to streamText), producing the doubled-text bug.
+  useWebSocket()
+
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [params] = useSearchParams()
   void params
