@@ -17,25 +17,39 @@ export interface CcSessionRow {
   files_changed?: number | null
 }
 
+// /api/cc/sessions is the canonical Factory session endpoint.
+// Returns { sessions: [...], total: N } — sessions use id + started_at.
+// Normalize to CcSessionRow shape (session_id + created_at) for the FE component.
 const ENDPOINTS = [
-  '/factory/sessions',
-  '/cc_sessions/recent',
-  '/factory/sessions/recent',
+  '/cc/sessions',
 ]
+
+function normalizeRow(r: Record<string, unknown>): CcSessionRow {
+  return {
+    session_id: (r.cc_session_id as string | null) ?? (r.id as string) ?? '',
+    status: (r.status as string) ?? 'unknown',
+    pipeline_stage: (r.pipeline_stage as string | null) ?? null,
+    confidence_score: r.confidence_score != null ? Number(r.confidence_score) : null,
+    created_at: (r.started_at as string | null) ?? (r.created_at as string | null) ?? null,
+    codebase_name: (r.codebase_name as string | null) ?? null,
+    prompt: (r.initial_prompt as string | null) ?? null,
+    files_changed: r.files_changed != null ? Number(r.files_changed) : null,
+  }
+}
 
 async function tryFetch(): Promise<CcSessionRow[]> {
   for (const ep of ENDPOINTS) {
     try {
       const res = await api.get(ep, { params: { limit: 10 } })
       const d = res.data
-      const rows: CcSessionRow[] = Array.isArray(d)
+      const raw: Record<string, unknown>[] = Array.isArray(d)
         ? d
         : Array.isArray(d?.sessions)
         ? d.sessions
         : Array.isArray(d?.rows)
         ? d.rows
         : []
-      if (rows.length > 0) return rows.slice(0, 10)
+      if (raw.length > 0) return raw.slice(0, 10).map(normalizeRow)
     } catch {
       // try next endpoint
     }
