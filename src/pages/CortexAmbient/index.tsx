@@ -387,6 +387,9 @@ export default function CortexAmbientPage() {
           lineHeight: 1,
           transition: 'color 300ms ease, transform 200ms ease',
         }
+        // Mobile perf (fork_mp53ubv4_481ba4): fully unmount chip-strip + Horizon SVG on mobile.
+        // Was display:none — DOM stayed mounted and 60fps rAF kept running. Now: no render at all.
+        if (isMobile) return null
         return (
           <div
             style={{
@@ -395,7 +398,6 @@ export default function CortexAmbientPage() {
               borderBottom: '1px solid rgba(212,175,55,0.08)',
               background: 'rgba(0,0,0,0.30)',
               overflow: 'hidden',
-              display: isMobile ? 'none' : undefined,
             }}
           >
             {/* Chips row — Horizon lives inside its own chip, not as a backdrop */}
@@ -646,6 +648,9 @@ export default function CortexAmbientPage() {
               }
         }
       >
+        {/* Mobile perf (fork_mp53ubv4_481ba4): unmount all 8 left-rail panels when sheet closed. */}
+        {/* Was: panels stayed mounted + polling under translateX(-100%). Now: zero CPU when closed. */}
+        {(!isMobile || leftSheetOpen) && (<>
         {/* ─────────────────────────────────────────────────────── */}
         {/* Panel 7: ENERGY BUDGET — weekly token gauge per account  */}
         {/* ─────────────────────────────────────────────────────── */}
@@ -1321,6 +1326,7 @@ export default function CortexAmbientPage() {
             </div>
           )}
         </Panel>
+        </>)}
       </div>
 
       {/* ── ROW 2, COL 2: Chat column ────────────────────────────────────────── */}
@@ -1403,6 +1409,9 @@ export default function CortexAmbientPage() {
               }
         }
       >
+        {/* Mobile perf (fork_mp53ubv4_481ba4): unmount all 8 right-rail panels when sheet closed. */}
+        {/* Was: panels stayed mounted + polling under translateX(100%). Now: zero CPU when closed. */}
+        {(!isMobile || rightSheetOpen) && (<>
 
         {/* ─────────────────────────────────────────────────────────────────── */}
         {/* Panel 1: FORKS — live fork cards                                    */}
@@ -1996,6 +2005,7 @@ export default function CortexAmbientPage() {
             <NotesPanel notes={notes} />
           </Panel>
         </div>
+        </>)}
       </div>
 
       {/* ── Page-local keyframes ────────────────────────────────────────────── */}
