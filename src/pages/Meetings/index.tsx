@@ -20,6 +20,7 @@
 import {
   useState, useRef, useEffect, useCallback, memo,
 } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -1149,9 +1150,25 @@ function MeetingDetail({ meetingId, onBack }: { meetingId: string; onBack: () =>
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function MeetingsPage() {
-  const [mode, setMode] = useState<'list' | 'recording' | 'uploading' | 'detail'>('list')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const { id: routeId } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const [mode, setMode] = useState<'list' | 'recording' | 'uploading' | 'detail'>(
+    routeId ? 'detail' : 'list',
+  )
+  const [selectedId, setSelectedId] = useState<string | null>(routeId ?? null)
   const queryClient = useQueryClient()
+
+  // Sync route param → state (back/forward, direct deep-link).
+  useEffect(() => {
+    if (routeId && routeId !== selectedId) {
+      setSelectedId(routeId)
+      setMode('detail')
+    } else if (!routeId && mode === 'detail') {
+      setMode('list')
+      setSelectedId(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId])
 
   const { data, isLoading } = useQuery({
     queryKey: ['meetings'],
@@ -1163,14 +1180,12 @@ export default function MeetingsPage() {
 
   const handleDone = useCallback((id: string) => {
     queryClient.invalidateQueries({ queryKey: ['meetings'] })
-    setSelectedId(id)
-    setMode('detail')
-  }, [queryClient])
+    navigate(`/meetings/${id}`)
+  }, [queryClient, navigate])
 
   const handleSelect = useCallback((id: string) => {
-    setSelectedId(id)
-    setMode('detail')
-  }, [])
+    navigate(`/meetings/${id}`)
+  }, [navigate])
 
   const ingestMode = mode === 'recording' || mode === 'uploading'
 
@@ -1183,7 +1198,7 @@ export default function MeetingsPage() {
       >
         <div className="flex items-center gap-2">
           {mode === 'detail' && (
-            <button onClick={() => setMode('list')} className="text-on-surface-muted hover:text-on-surface md:hidden">
+            <button onClick={() => navigate('/meetings')} className="text-on-surface-muted hover:text-on-surface md:hidden">
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
@@ -1282,7 +1297,7 @@ export default function MeetingsPage() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0 }}
               >
-                <MeetingDetail meetingId={selectedId} onBack={() => setMode('list')} />
+                <MeetingDetail meetingId={selectedId} onBack={() => navigate('/meetings')} />
               </motion.div>
             ) : (
               <motion.div

@@ -17,16 +17,23 @@
  *     ~/ecodiaos/patterns/cron-fire-responses-do-not-emit-applied-tags-as-chat-output.md
  */
 
-// Match a tag-prefix line at start-of-line. Anchored: must be the leading non-whitespace token.
-// Preserves inline mentions like "the [APPLIED] tag" because regex requires the bracket at line-start
-// followed by all-caps tag content (optionally with `: detail`) and a closing bracket as the
-// line's leading token.
+// Match a tag-prefix line at start-of-line. Anchored: leading non-whitespace
+// must be `[ALL-CAPS-NAME]` or `[ALL-CAPS-NAME: detail]`, followed by anything
+// on the same line. Generalised so new backend tags are stripped without
+// requiring a frontend deploy. Inline uses like "the [APPLIED] tag" are
+// preserved because we require the bracket at line-start.
+//
+// Allow-list any tag families we WANT to surface to the user (currently none).
 const TAG_LINE_RE =
-  /^\s*\[(?:APPLIED|NOT-APPLIED|FALSE-POSITIVE|OVERRIDE|BRIEF-CHECK WARN|CONTEXT-SURFACE WARN|CONTEXT-SURFACE PRIMARY|CONTEXT-SURFACE ALSO|CRED-SURFACE WARN|FORCING WARN|DOCTRINE-CROSS-REF SUGGEST|STATUS-BOARD-CONTEXT SUGGEST|MACRO-VALIDATION WARN|COWORK-FIRST WARN|ANTHROPIC-FIRST WARN|HAIKU-REVIEW|INFO|FORK-NUDGE|SCHEDULED|SYSTEM)(?::[^\]\n]*)?\][^\n]*$/
+  /^\s*\[[A-Z][A-Z0-9\-]*(?:\s+[A-Z0-9\-]+)*(?::[^\]\n]*)?\][^\n]*$/
 
-// Match XML-style continuity blocks. Multi-line, non-greedy, paired open/close tags.
+// Continuity blocks: a closed enum kept in sync with backend SDK prompt
+// continuity. Adding a new block name requires a frontend deploy — that's
+// the trade we make to avoid stripping legitimate inline HTML like <i>,
+// <details>, <summary>. Adding `now` (the time-of-day banner) makes this
+// list non-purely-snake_case so we keep the OR alternation pattern.
 const CONTINUITY_BLOCK_RE =
-  /<(now|doctrine_surface|forks_rollup|recent_doctrine|relevant_memory|restart_recovery|recent_exchanges|last_turn_breadcrumb|skills_surface|perception_summary)>[\s\S]*?<\/\1>/g
+  /<(now|doctrine_surface|forks_rollup|recent_doctrine|relevant_memory|restart_recovery|recent_exchanges|last_turn_breadcrumb|skills_surface|perception_summary|observer_signals|observer_critical|status_board_surface)>[\s\S]*?<\/\1>/g
 
 /**
  * Split text into segments alternating non-fence and fence ranges so we can
@@ -34,9 +41,10 @@ const CONTINUITY_BLOCK_RE =
  */
 function splitByFences(text: string): Array<{ inFence: boolean; content: string }> {
   const segments: Array<{ inFence: boolean; content: string }> = []
-  // Match triple-backtick fences (with optional language) end-to-end.
-  // Lazy + multiline so we capture each fence as its own segment.
-  const fenceRe = /```[\s\S]*?```/g
+  // Match triple-backtick fences anchored at line-start (with up to 3 leading
+  // spaces per CommonMark). Lazy + multiline so each fence is its own segment;
+  // inline `` `code` `` and stray ``` mid-prose don't open a phantom fence.
+  const fenceRe = /(^|\n) {0,3}```[\s\S]*?\n {0,3}```/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   while ((match = fenceRe.exec(text)) !== null) {

@@ -23,7 +23,7 @@
  *
  * Round-3 bugfix, 2026-05-08, fork_mowu9a3g_f34229:
  *   - Markdown rendering: messages were being rendered as plain pre-wrapped
- *     text. Now wrapped in ReactMarkdown (remarkGfm + rehypeRaw) so headings,
+ *     text. Now wrapped in ReactMarkdown (remarkGfm only — no rehypeRaw to
  *     lists, code blocks, links, bold all render. Mirrors the canonical
  *     setup in src/pages/Cortex/blocks/TextBlock.tsx and CCStream.tsx.
  *   - Doctrine-noise + model-XML scaffold tags stripped before render via
@@ -62,11 +62,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
 import { useOSSessionStore } from '@/store/osSessionStore'
 import { stripDoctrineNoise } from '@/utils/stripDoctrineNoise'
+import { safeUrl } from '@/utils/safeUrl'
 
-const MAX_RENDERED = 30 // hard cap on what we render in this panel
+const MAX_RENDERED = 80 // hard cap on what we render in this panel
 
 // Model XML scaffold tags that occasionally leak into rendered text. Per
 // ~/ecodiaos/patterns/frontend-strip-model-xml-tags.md - strip the tags but
@@ -186,6 +186,9 @@ export function ChatLog() {
         <div
           ref={scrollRef}
           className="ambient-chatlog-scroll"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
           style={{
             flex: 1,
             minHeight: 0,
@@ -293,8 +296,7 @@ function Bubble({ role, content, streaming = false }: BubbleProps) {
           {cleaned ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeRaw]}
-              urlTransform={(url) => url}
+              urlTransform={safeUrl}
             >
               {cleaned}
             </ReactMarkdown>

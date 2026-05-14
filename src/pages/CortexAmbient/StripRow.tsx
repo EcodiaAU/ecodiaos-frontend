@@ -170,7 +170,7 @@ export function StripRow({ forks, rows }: StripRowProps) {
               className="text-[10px]"
               style={{ color: AMBIENT_PALETTE.textDim, opacity: 0.55 }}
             >
-              clear deck
+              nothing
             </span>
           )}
         </div>

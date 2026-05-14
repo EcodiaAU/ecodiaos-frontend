@@ -568,7 +568,7 @@ export default function CortexAmbientPage() {
                 color: '#c8f243',
                 animation: 'pulse-dot 1.8s ease-in-out infinite',
               }}>
-                {'●'} CONNECTED
+                {'●'} live
               </span>
               <span style={{ fontFamily: MONO_FONT, fontSize: 9, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.18)' }}>
                 EOS{'\xB7'}CORTEX
@@ -1582,7 +1582,7 @@ export default function CortexAmbientPage() {
                   color: 'rgba(255,255,255,0.30)',
                 }}
               >
-                stream unavailable — no application-events.jsonl yet
+                no perception events yet
               </div>
             ) : perceptionEvents.length === 0 ? (
               <div style={{ ...ROW, ...TEXT_DIM, fontFamily: MONO_FONT }}>
@@ -1700,7 +1700,7 @@ export default function CortexAmbientPage() {
                 >
                   ●
                 </span>
-                ALL CLEAR
+                nothing pending
               </div>
             ) : (
               restartRequests.map((r) => (
@@ -1905,7 +1905,7 @@ export default function CortexAmbientPage() {
                   fontFamily: MONO_FONT, fontSize: 11, color: '#22c55e',
                 }}>
                   <span style={{ animation: 'all-clear-pulse 3s ease-in-out infinite' }}>{'●'}</span>
-                  ALL CLEAR
+                  nothing pending
                 </div>
               ) : (
                 p1Rows.map((r) => (

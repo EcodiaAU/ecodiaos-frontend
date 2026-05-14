@@ -74,7 +74,7 @@ export function NotesPanel({ notes: notesProp }: NotesPanelProps) {
             letterSpacing: '0.04em',
           }}
         >
-          observers warming up...
+          no observer notes
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>

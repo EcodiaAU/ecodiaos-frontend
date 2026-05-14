@@ -58,7 +58,7 @@ export function ForksStrip({ forks, layout = 'horizontal' }: ForksStripProps) {
           letterSpacing: '0.04em',
         }}
       >
-        no forks running. quiet horizon.
+        no forks running.
       </div>
     )
   }

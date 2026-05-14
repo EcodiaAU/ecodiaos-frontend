@@ -277,6 +277,23 @@ export function getEffectiveStreamTextLength(): number {
 }
 
 /**
+ * Drop all pending rAF-buffered deltas without flushing them. Used when the
+ * caller is about to wipe streamText/streamChunks/streamThinking entirely
+ * (clearMessages, restart) — flushing would re-pollute the freshly-cleared
+ * state with stale buffer content on the next rAF.
+ */
+export function resetStreamBuffers(): void {
+  _streamTextBuffer = ''
+  _streamChunkBuffer = []
+  _streamThinkingBuffer = ''
+  _flushScheduled = false
+  if (_turnStartTimeout) {
+    clearTimeout(_turnStartTimeout)
+    _turnStartTimeout = null
+  }
+}
+
+/**
  * Force-flush any pending rAF-buffered deltas into the store synchronously.
  * Used when a terminal event (assistant complete, finalize) arrives before
  * the next animation frame — without this, the last ~1 frame of deltas would
@@ -399,26 +416,11 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   },
 
   appendStreamText: (text) => {
-    // DEBUG (stream-dedup-trace 2026-05-13): log every append to diagnose
-    // the doubled-text bug. Tag with caller via console.trace would be
-    // noisy — instead each WS handler at the call site logs its own tag.
-    try {
-      const cur = useOSSessionStore.getState().streamText.length + _streamTextBuffer.length
-      const head = text.length > 40 ? text.slice(0, 40) + '…' : text
-      // eslint-disable-next-line no-console
-      console.log('[stream-trace] appendStreamText', { len: text.length, curBefore: cur, head: JSON.stringify(head) })
-    } catch { /* noop */ }
     _streamTextBuffer += text
     scheduleFlush()
   },
 
   replaceStreamText: (text) => {
-    try {
-      const cur = useOSSessionStore.getState().streamText.length + _streamTextBuffer.length
-      const head = text.length > 40 ? text.slice(0, 40) + '…' : text
-      // eslint-disable-next-line no-console
-      console.log('[stream-trace] replaceStreamText', { len: text.length, curBefore: cur, head: JSON.stringify(head) })
-    } catch { /* noop */ }
     set({ streamText: text })
   },
 
@@ -556,12 +558,15 @@ export const useOSSessionStore = create<OSSessionStore>()(persist((set, get) => 
   setSessionId: (id) => set({ sessionId: id }),
   setTokenUsage: (usage) => set({ tokenUsage: usage }),
   setCompacting: (v) => set({ compacting: v }),
-  clearMessages: () => set({
-    messages: [], streamChunks: [], streamText: '', streamTools: [], streamThinking: '', status: 'idle',
-    tokenUsage: null, lastUserMessageAt: null, recoveryAttempted: false, interruptQueue: [],
-    assistantTurnStarting: false, pendingTurnTelemetry: null, inlineBanners: [],
-    compactionPhase: 'idle', lastSeenSeq: null, lastSeq: null, lastTurnTelemetry: null,
-  }),
+  clearMessages: () => {
+    resetStreamBuffers()
+    set({
+      messages: [], streamChunks: [], streamText: '', streamTools: [], streamThinking: '', status: 'idle',
+      tokenUsage: null, lastUserMessageAt: null, recoveryAttempted: false, interruptQueue: [],
+      assistantTurnStarting: false, pendingTurnTelemetry: null, inlineBanners: [],
+      compactionPhase: 'idle', lastSeenSeq: null, lastSeq: null, lastTurnTelemetry: null,
+    })
+  },
 
   /** Inject a response recovered from the backend after tab close */
   injectRecoveredResponse: (text, chunks) => {

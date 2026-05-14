@@ -42,7 +42,7 @@ export function StatusThreads({ rows }: StatusThreadsProps) {
           letterSpacing: '0.04em',
         }}
       >
-        no active threads. clear deck.
+        no active threads.
       </div>
     )
   }

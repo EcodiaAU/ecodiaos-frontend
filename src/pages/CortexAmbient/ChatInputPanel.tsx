@@ -302,6 +302,8 @@ export function ChatInputPanel() {
                 onChange={(e) => setValue(e.target.value)}
                 onFocus={() => setHasFocused(true)}
                 onKeyDown={(e) => {
+                  // IME composition (CJK) — Enter commits the composition, not the form.
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     onSubmit()

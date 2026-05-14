@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useAuthStore } from './store/authStore'
 import api from './api/client'
 import toast from 'react-hot-toast'
+import { SceneErrorBoundary } from './components/shared/SceneErrorBoundary'
 
 // ── Code-split route pages ───────────────────────────────────────────────────
 const DashboardPage = lazy(() => import('./pages/CortexAmbient'))
@@ -121,27 +122,29 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Root: EcodiaOS dashboard, auth-gated inline */}
-        <Route
-          path="/"
-          element={
-            <AuthGate>
-              <SceneSuspense>
-                <DashboardPage />
-              </SceneSuspense>
-            </AuthGate>
-          }
-        />
+      <SceneErrorBoundary>
+        <Routes>
+          {/* Root: EcodiaOS dashboard, auth-gated inline */}
+          <Route
+            path="/"
+            element={
+              <AuthGate>
+                <SceneSuspense>
+                  <DashboardPage />
+                </SceneSuspense>
+              </AuthGate>
+            }
+          />
 
-        {/* Meeting recorder + viewer: no auth, mobile-accessible */}
-        <Route path="/meeting"      element={<SceneSuspense><MeetingPage /></SceneSuspense>} />
-        <Route path="/meetings"     element={<SceneSuspense><MeetingsPage /></SceneSuspense>} />
-        <Route path="/meetings/:id" element={<SceneSuspense><MeetingsPage /></SceneSuspense>} />
+          {/* Meeting recorder + viewer: no auth, mobile-accessible */}
+          <Route path="/meeting"      element={<SceneSuspense><MeetingPage /></SceneSuspense>} />
+          <Route path="/meetings"     element={<SceneSuspense><MeetingsPage /></SceneSuspense>} />
+          <Route path="/meetings/:id" element={<SceneSuspense><MeetingsPage /></SceneSuspense>} />
 
-        {/* Everything else: back to root */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Everything else: back to root */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </SceneErrorBoundary>
     </BrowserRouter>
   )
 }

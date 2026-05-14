@@ -179,7 +179,7 @@ export function Footer() {
             letterSpacing: '0.10em',
           }}
         >
-          ONLINE
+          live
         </span>
       </span>
 
@@ -193,17 +193,17 @@ export function Footer() {
       {/* Flex spacer */}
       <span style={{ flex: 1 }} />
 
-      {/* TRANSMITTING indicator */}
+      {/* Activity indicator — subtle, no hype copy */}
       <span
         style={{
-          color: '#ff6a10',
+          color: 'rgba(255,255,255,0.40)',
           fontSize: 9,
           letterSpacing: '0.10em',
           animation: 'pulse-dot 1.8s ease-in-out infinite',
           flexShrink: 0,
         }}
       >
-        TRANSMITTING...
+        active
       </span>
     </footer>
   )

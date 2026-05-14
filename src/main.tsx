@@ -4,6 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
+import { startObserverPulse } from './pulse/observerPulseClient'
+
+// Observer Framework v2: FE console proxy + error/route/ws/perf firehose
+// posting to /api/observer-pulse/fe-event for the systemPulse observer.
+startObserverPulse()
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -1,12 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
-import { useNotificationStore } from '@/store/notificationStore'
-import { useCortexStore } from '@/store/cortexStore'
-import { useWorkerStore } from '@/store/workerStore'
 import { useOSSessionStore, getEffectiveStreamTextLength, flushStreamBuffersSync } from '@/store/osSessionStore'
 import { useConnectionStore, type ConnectionState } from '@/store/connectionStore'
-import type { CCSession } from '@/types/claudeCode'
 import api from '@/api/client'
 import { recoverEventsSince, getMessagesSince } from '@/api/osSession'
 
@@ -106,8 +102,6 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   if (type === 'text_delta' && content) {
     bumpSeq(c.seq)
     if (osStore.assistantTurnStarting) osStore.setAssistantTurnStarting(false)
-    // eslint-disable-next-line no-console
-    console.log('[stream-trace] WS:text_delta seq=', c.seq)
     osStore.appendStreamText(content)
     return
   }
@@ -121,8 +115,6 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
     if (osStore.status !== 'streaming') return
     flushStreamBuffersSync()
     const effectiveLen = getEffectiveStreamTextLength()
-    // eslint-disable-next-line no-console
-    console.log('[stream-trace] WS:assistant_text seq=', c.seq, 'contentLen=', content.length, 'effectiveLen=', effectiveLen, 'willReplace=', content.length > effectiveLen)
     if (content.length > effectiveLen) {
       osStore.replaceStreamText(content)
     }
@@ -322,8 +314,6 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
       if (parsed.type === 'assistant' && parsed.message?.content) {
         for (const block of parsed.message.content) {
           if (block.type === 'text' && block.text) {
-            // eslint-disable-next-line no-console
-            console.log('[stream-trace] WS:legacy-stream/assistant.text')
             osStore.appendStreamText(block.text)
           }
           if (block.type === 'tool_use') {
@@ -332,8 +322,6 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
         }
       }
       if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-        // eslint-disable-next-line no-console
-        console.log('[stream-trace] WS:legacy-stream/content_block_delta')
         osStore.appendStreamText(parsed.delta.text)
       }
     } catch { /* not JSON */ }
@@ -341,27 +329,33 @@ function _applyOSOutputChunkUnsafe(chunk: unknown) {
   }
 }
 
+// Floor for replay dedup: the seq we KNOW we've already applied. Distinct
+// from osStore.lastSeenSeq, which gets advanced live the moment a gap is
+// detected — using lastSeenSeq for replay dedup filters out the very events
+// the gap was raised to fill.
+let _replayFloor: number | null = null
+
 /**
- * Replay events returned from /os-session/recover. Dedupes by seq against
- * the store's lastSeenSeq, updates lastSeenSeq to the max observed.
+ * Replay events returned from /os-session/recover. Dedupes against the
+ * _replayFloor (events strictly above the floor are applied), updates floor
+ * to the max observed.
  */
 function replayRecoveredEvents(events: Array<{ seq: number; type: string; data?: unknown; [k: string]: unknown }>) {
   if (!events || events.length === 0) return
   const osStore = useOSSessionStore.getState()
-  let maxSeq = osStore.lastSeenSeq ?? -Infinity
+  const floor = _replayFloor ?? osStore.lastSeenSeq ?? -Infinity
+  let maxSeq = floor
 
   for (const ev of events) {
     if (typeof ev.seq !== 'number') continue
-    // Skip events we already applied.
-    if (osStore.lastSeenSeq != null && ev.seq <= osStore.lastSeenSeq) continue
+    // Skip events at or below the floor — we already applied them.
+    if (ev.seq <= floor) continue
     if (ev.seq > maxSeq) maxSeq = ev.seq
 
     // Reuse the same per-type dispatch the live stream uses. The backend
     // envelope is { seq, ts, type, sessionId?, data? } — we only apply
     // os-session:output chunks via replay here, matching the live handler.
     if (ev.type === 'os-session:output') {
-      // eslint-disable-next-line no-console
-      console.log('[stream-trace] REPLAY:output seq=', ev.seq)
       applyOSOutputChunk(ev.data)
     } else if (ev.type === 'os-session:status') {
       // Status is idempotent; just apply to the store.
@@ -375,7 +369,13 @@ function replayRecoveredEvents(events: Array<{ seq: number; type: string; data?:
   }
 
   if (Number.isFinite(maxSeq)) {
-    useOSSessionStore.getState().setLastSeenSeq(maxSeq as number)
+    _replayFloor = maxSeq as number
+    // Only advance the store's lastSeenSeq if recovery actually pushed it
+    // forward beyond what live already saw.
+    const live = useOSSessionStore.getState().lastSeenSeq
+    if (live == null || (maxSeq as number) > live) {
+      useOSSessionStore.getState().setLastSeenSeq(maxSeq as number)
+    }
   }
 }
 
@@ -543,6 +543,12 @@ function _scheduleRecover(sinceSeq: number) {
   if (_recoverPendingSince == null || sinceSeq < _recoverPendingSince) {
     _recoverPendingSince = sinceSeq
   }
+  // Pin the replay floor at the lowest pre-gap seq we have, so the live
+  // handler's setLastSeenSeq(msg.seq) can't filter out the events we're
+  // about to recover.
+  if (_replayFloor == null || sinceSeq < _replayFloor) {
+    _replayFloor = sinceSeq
+  }
   if (_recoverScheduled || _recoverInFlight) return
   const delay = _RECOVER_BACKOFF_MS[Math.min(_recoverFailStreak, _RECOVER_BACKOFF_MS.length - 1)]
   _recoverScheduled = setTimeout(() => {
@@ -579,8 +585,6 @@ export { applyOSOutputChunk, replayRecoveredEvents }
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const token = useAuthStore((s) => s.token)
-  const addNotification = useNotificationStore((s) => s.addNotification)
-  const updateWorker = useWorkerStore((s) => s.updateWorker)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -726,8 +730,16 @@ export function useWebSocket() {
           // a leaked previous socket can keep firing onmessage and double/triple
           // the output the user sees during streaming.
           if (wsRef.current !== ws) return
-          const msg = JSON.parse(event.data)
-          const cortex = useCortexStore.getState()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let msg: any
+          try {
+            msg = JSON.parse(event.data)
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[useWebSocket] dropped malformed ws payload', err)
+            return
+          }
+          if (!msg || typeof msg !== 'object') return
 
           // Stale-stream watchdog: every WS message resets the last-event
           // clock. Liveness heartbeats also bump the dedicated liveness clock
@@ -743,7 +755,12 @@ export function useWebSocket() {
           // see a jump, fetch the missing slice from the recover endpoint and
           // replay it through the same per-type dispatch. Deduped in-place via
           // lastSeenSeq so a mid-flight live event never double-applies.
-          if (typeof msg.seq === 'number') {
+          //
+          // Fork-stream events (fork_id != 'main') are skipped from main-store
+          // seq accounting — they're in a separate logical stream and would
+          // otherwise look like gaps to the main conductor.
+          const _msgForkId = typeof msg.fork_id === 'string' ? msg.fork_id : 'main'
+          if (typeof msg.seq === 'number' && _msgForkId === 'main') {
             const osStore = useOSSessionStore.getState()
             const prev = osStore.lastSeenSeq
             const prevEpoch = _lastSeenEpoch
@@ -780,86 +797,22 @@ export function useWebSocket() {
 
           switch (msg.type) {
             case 'notification':
-              addNotification(msg.payload)
+              // No notification UI is mounted. Re-broadcast for any future
+              // listener, but no store mutation here.
+              window.dispatchEvent(new CustomEvent('ecodia:notification', { detail: msg.payload }))
               break
 
-            // ─── CC Session Output ────────────────────────────────
-            case 'cc:output': {
-              const chunk = typeof msg.data === 'string' ? msg.data : JSON.stringify(msg.data)
-              cortex.appendCCOutput(msg.sessionId, chunk)
-              window.dispatchEvent(new CustomEvent('ecodia:cc-session-update', { detail: { sessionId: msg.sessionId, type: 'output' } }))
-              break
-            }
-
-            // ─── CC Session Status Changes ────────────────────────
-            case 'cc:status': {
-              const newStatus = msg.data?.status ?? msg.data
-              const statusUpdate = { status: newStatus }
-              cortex.updateCCSession(msg.sessionId, statusUpdate)
-              window.dispatchEvent(new CustomEvent('ecodia:cc-session-update', { detail: { sessionId: msg.sessionId, type: 'status', status: newStatus } }))
-
-              if (newStatus === 'complete' || newStatus === 'error') {
-                cortex.pushAmbientEvent({
-                  kind: newStatus === 'complete' ? 'cc_complete' : 'cc_error',
-                  summary: `CC session ${newStatus}: ${msg.sessionId}`,
-                  detail: JSON.stringify(msg.data),
-                })
-              }
-              // Always invalidate session list on status change
+            // ─── CC Session events ────────────────────────────────
+            // CortexAmbient polls /cc/sessions every 30s; we invalidate the
+            // React Query cache on any cc:* event so the right-rail picks
+            // up state changes immediately.
+            case 'cc:output':
+            case 'cc:status':
+            case 'cc:stage':
+            case 'cc:pipeline_result':
+            case 'cc:session_created':
               queryClient.invalidateQueries({ queryKey: ['ccSessions'] })
-              break
-            }
-
-            // ─── CC Pipeline Stage ────────────────────────────────
-            case 'cc:stage': {
-              const stageUpdate = { pipeline_stage: msg.data?.stage }
-              cortex.updateCCSession(msg.sessionId, stageUpdate)
-              queryClient.invalidateQueries({ queryKey: ['ccSessions'] })
-              window.dispatchEvent(new CustomEvent('ecodia:cc-session-update', { detail: { sessionId: msg.sessionId, type: 'stage', stage: msg.data?.stage } }))
-              break
-            }
-
-            // ─── CC Pipeline Result ──────────────────────────────
-            case 'cc:pipeline_result': {
-              const result = msg.data ?? msg.payload
-              const statusUpdate = {
-                status: (result?.success ? 'complete' : 'error') as CCSession['status'],
-                pipeline_stage: (result?.success ? 'deployed' : 'error') as CCSession['pipeline_stage'],
-                confidence_score: result?.confidence ?? null,
-                commit_sha: result?.commitSha ?? null,
-              }
-              cortex.updateCCSession(msg.sessionId, statusUpdate)
-              cortex.pushAmbientEvent({
-                kind: result?.success ? 'cc_deployed' : 'cc_deploy_failed',
-                summary: result?.success
-                  ? `Deployed: ${result.commitSha?.slice(0, 8) ?? 'committed'} (confidence: ${((result.confidence ?? 0) * 100).toFixed(0)}%)`
-                  : `Deploy failed: ${result?.error ?? 'unknown'}`,
-                detail: JSON.stringify(result),
-              })
-              queryClient.invalidateQueries({ queryKey: ['ccSessions'] })
-              window.dispatchEvent(new CustomEvent('ecodia:cc-session-update', { detail: { sessionId: msg.sessionId, type: 'pipeline_result' } }))
-              break
-            }
-
-            // ─── CC Session Created ─────────────────────────────
-            case 'cc:session_created': {
-              const session = msg.data ?? msg.payload
-              if (session?.id) {
-                cortex.registerCCSession(session)
-                cortex.pushAmbientEvent({
-                  kind: 'cc_started',
-                  summary: `New session: ${session.prompt?.slice(0, 80) ?? session.id}`,
-                  detail: JSON.stringify(session),
-                })
-                queryClient.invalidateQueries({ queryKey: ['ccSessions'] })
-                window.dispatchEvent(new CustomEvent('ecodia:cc-session-update', { detail: { sessionId: session.id, type: 'created' } }))
-              }
-              break
-            }
-
-            // ─── Worker Heartbeats ────────────────────────────────
-            case 'worker_heartbeat':
-              updateWorker(msg.payload)
+              window.dispatchEvent(new CustomEvent('ecodia:cc-session-update', { detail: msg }))
               break
 
             // ─── Action Queue Events ──────────────────────────────
@@ -873,14 +826,23 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent('ecodia:action-queue-update', { detail: msg }))
               break
 
+            // ─── Status Board ───────────────────────────────────
+            // Perception dispatcher emits status_board:* events whenever a row
+            // is created / updated / archived / unarchived. FE invalidates the
+            // React Query cache so the lens re-fetches without a refresh button.
+            case 'status_board:row_created':
+            case 'status_board:row_updated':
+            case 'status_board:row_archived':
+            case 'status_board:row_unarchived':
+            case 'status_board:bulk_updated':
+              queryClient.invalidateQueries({ queryKey: ['statusBoardRows'] })
+              window.dispatchEvent(new CustomEvent('ecodia:status-board-update', { detail: msg }))
+              break
+
             // ─── Action Queue Expired ───────────────────────────
             case 'action_queue:expired':
               queryClient.invalidateQueries({ queryKey: ['pendingActions'] })
               queryClient.invalidateQueries({ queryKey: ['actionStats'] })
-              cortex.pushAmbientEvent({
-                kind: 'action_expired',
-                summary: `Action expired: ${msg.payload?.title ?? 'item removed from queue'}`,
-              })
               break
 
             // ─── OS Session (Agent SDK stream) ──────────────────
@@ -981,21 +943,12 @@ export function useWebSocket() {
             // Fired on every spawn / position / status transition / done.
             // The whole fork snapshot is included so the store always has
             // ground truth without any extra fetches.
-            case 'os-session:fork': {
-              const kind = msg.kind as string
-              const fork = msg.fork
-              if (!fork || typeof fork !== 'object') break
-              import('@/store/forksStore').then(({ useForksStore }) => {
-                if (kind === 'aborted' || kind === 'error' || kind === 'done') {
-                  // Keep the snapshot — the panel renders recent terminal
-                  // forks for a few minutes so users can read the report.
-                  useForksStore.getState().upsert(fork as never)
-                } else {
-                  useForksStore.getState().upsert(fork as never)
-                }
-              })
+            case 'os-session:fork':
+              // CortexAmbient polls /forks via useForks; invalidate it so
+              // the chip + strip pick up fork state changes immediately.
+              queryClient.invalidateQueries({ queryKey: ['ambient-forks'] })
+              window.dispatchEvent(new CustomEvent('ecodia:fork-event', { detail: msg }))
               break
-            }
             case 'os-session:energy': {
               // Server pushed a fresh energy snapshot — update React Query cache directly
               if (msg && msg.pctRemaining != null) {
@@ -1014,56 +967,15 @@ export function useWebSocket() {
             // ─── Rescue (ecodia-rescue process) ───────────────────────
             // Parallel to os-session:* events but for the standalone rescue
             // session. Routed into useRescueStore, not useOSSessionStore.
-            case 'rescue:ready': {
-              import('@/store/rescueStore').then(({ useRescueStore }) => {
-                useRescueStore.getState().setReady(true)
-              })
+            // rescue:* events: the Rescue UI was removed; the rescue worker
+            // still emits these. Re-broadcast as a window event so future
+            // consumers can listen, but no store mutation happens here.
+            case 'rescue:ready':
+            case 'rescue:status':
+            case 'rescue:output':
+            case 'rescue:exit':
+              window.dispatchEvent(new CustomEvent('ecodia:rescue-event', { detail: msg }))
               break
-            }
-            case 'rescue:status': {
-              import('@/store/rescueStore').then(({ useRescueStore }) => {
-                const raw = msg.status as string | undefined
-                const next: 'idle' | 'streaming' | 'error' | 'unknown' =
-                  raw === 'streaming' ? 'streaming' :
-                  raw === 'error' ? 'error' :
-                  raw === 'idle' ? 'idle' : 'unknown'
-                useRescueStore.getState().setStatus(next)
-                // When turn ends, flush current stream text into messages.
-                if (next === 'idle' || next === 'error') {
-                  useRescueStore.getState().flushStreamToMessage()
-                }
-              })
-              break
-            }
-            case 'rescue:output': {
-              import('@/store/rescueStore').then(({ useRescueStore }) => {
-                const store = useRescueStore.getState()
-                const d = msg.data || msg
-                if (d.type === 'text_delta' && d.content) {
-                  store.appendStreamText(d.content)
-                } else if (d.type === 'thinking_delta' && d.content) {
-                  store.appendStreamThinking(d.content)
-                } else if (d.type === 'tool_use_starting' && d.tool_use_id) {
-                  store.onToolStart(d.tool_use_id, d.tool_name || 'tool')
-                } else if (d.type === 'tool_use_input_complete' && d.tool_use_id) {
-                  store.onToolInput(d.tool_use_id, d.input)
-                } else if (d.type === 'tool_result' && d.tool_use_id) {
-                  store.onToolResult(d.tool_use_id, String(d.content || ''), !!d.is_error)
-                } else if (d.type === 'turn_complete') {
-                  store.flushStreamToMessage()
-                } else if (d.type === 'error') {
-                  store.flushStreamToMessage()
-                }
-              })
-              break
-            }
-            case 'rescue:exit': {
-              import('@/store/rescueStore').then(({ useRescueStore }) => {
-                useRescueStore.getState().setReady(false)
-                useRescueStore.getState().setStatus('unknown')
-              })
-              break
-            }
 
             // ─── Seamless session handover ────────────────────────
             case 'os-session:handover': {
