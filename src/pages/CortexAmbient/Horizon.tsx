@@ -202,14 +202,23 @@ export function Horizon({ runningForks, height: renderHeight = 30 }: HorizonProp
 
     let raf  = 0
     let lastT = performance.now()
+    let lastFrameTime = 0
 
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick)
       if (document.hidden) return
 
+      const s = stateRef.current
+      // Frame throttle: 30fps when active, 15fps when idle. Cuts rAF work
+      // by half (active) or quarter (idle) versus the prior unbounded 60fps
+      // loop. Critical for mobile thermals - Horizon was driving the GPU
+      // even with the conductor doing nothing.
+      const interval = s.mode === 'idle' ? 66 : 33
+      if (now - lastFrameTime < interval) return
+      lastFrameTime = now
+
       const dt = Math.min(64, now - lastT)
       lastT = now
-      const s = stateRef.current
 
       const phaseSpeed = s.mode === 'streaming' ? 0.012 : s.mode === 'thinking' ? 0.006 : 0.0028
       s.phase += phaseSpeed * dt

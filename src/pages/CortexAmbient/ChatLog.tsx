@@ -59,7 +59,7 @@
  *     surfaces serve different functions.
  *   - No emoji, no tagline, no wordmark. Typography carries the brand.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useOSSessionStore } from '@/store/osSessionStore'
@@ -253,7 +253,7 @@ interface BubbleProps {
   streaming?: boolean
 }
 
-function Bubble({ role, content, streaming = false }: BubbleProps) {
+function BubbleInner({ role, content, streaming = false }: BubbleProps) {
   const isUser = role === 'user'
   const cleaned = useMemo(() => cleanForRender(content), [content])
 
@@ -309,6 +309,16 @@ function Bubble({ role, content, streaming = false }: BubbleProps) {
     </div>
   )
 }
+
+// Memoised wrapper: only re-render the bubble when its own content/role/streaming
+// state changes. Without this, every WS token mutates streamText -> ChatLog
+// re-renders -> ALL ~80 historical bubbles re-run ReactMarkdown.parse() on
+// every tick, which is the single largest mobile-heat source on streaming.
+const Bubble = memo(BubbleInner, (prev, next) =>
+  prev.content === next.content &&
+  prev.role === next.role &&
+  prev.streaming === next.streaming
+)
 
 function StreamDot() {
   return (

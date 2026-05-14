@@ -143,12 +143,34 @@ const PERCEPTION_ICON: Record<string, string> = {
 
 // ── Flash-on-change hook ─────────────────────────────────────────────────────
 // Returns a CSS class name that flashes the element's border on data change.
+//
+// Mobile perf: JSON.stringify on every render of every panel was a heat
+// source - some inputs (perceptionEvents, signals, notes) are arrays of
+// up to 200+ rich objects. cheapHash short-circuits to length + last id
+// for arrays, which catches every real change in this codebase (rows are
+// only appended/replaced wholesale, never mutated in place) at O(1).
+function cheapHash(value: unknown): string {
+  if (Array.isArray(value)) {
+    const last = value[value.length - 1] as { id?: unknown; updated_at?: unknown } | undefined
+    return value.length + ':' + String(last?.id ?? last?.updated_at ?? '')
+  }
+  if (value && typeof value === 'object') {
+    const v = value as { id?: unknown; updated_at?: unknown }
+    if (v.id !== undefined || v.updated_at !== undefined) {
+      return String(v.id ?? '') + ':' + String(v.updated_at ?? '')
+    }
+    // Fallback for unknown object shapes - this path is rare in practice.
+    try { return JSON.stringify(value) } catch { return String(value) }
+  }
+  return String(value)
+}
+
 function useFlash(value: unknown): boolean {
   const [flashing, setFlashing] = useState(false)
-  const prevRef = useRef<string>(JSON.stringify(value))
+  const prevRef = useRef<string>(cheapHash(value))
 
   useEffect(() => {
-    const next = JSON.stringify(value)
+    const next = cheapHash(value)
     if (next !== prevRef.current) {
       prevRef.current = next
       setFlashing(true)

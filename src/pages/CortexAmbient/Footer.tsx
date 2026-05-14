@@ -45,8 +45,35 @@ function useUptime() {
   const startRef = useRef(Date.now())
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
-    const t = setInterval(() => setElapsed(Date.now() - startRef.current), 1000)
-    return () => clearInterval(t)
+    // Pause the per-second interval when the tab is hidden. Without this the
+    // footer ticks every second forever AND keeps 4 infinite pulse animations
+    // running, which is meaningful battery + heat on mobile background tabs.
+    let t: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (t) return
+      t = setInterval(() => setElapsed(Date.now() - startRef.current), 1000)
+    }
+    const stop = () => {
+      if (t) {
+        clearInterval(t)
+        t = null
+      }
+    }
+    const onVis = () => {
+      if (document.hidden) stop()
+      else {
+        // Update once on resume so the uptime jumps to the correct value
+        // instead of resuming from the stale paused number.
+        setElapsed(Date.now() - startRef.current)
+        start()
+      }
+    }
+    if (!document.hidden) start()
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [])
   const s = Math.floor(elapsed / 1000)
   const h = Math.floor(s / 3600)
