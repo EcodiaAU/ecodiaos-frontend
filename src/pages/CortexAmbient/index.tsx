@@ -75,6 +75,11 @@ function formatUptime(sec: number | null): string {
 const MONO_FONT = "'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace"
 const SANS_FONT = "'Inter', system-ui, sans-serif"
 
+// Mobile detect — gate inline infinite SVG/marker animations on small screens.
+// Mobile-Safari + iOS WebView heat up dramatically from these. Desktop unchanged.
+// fork_mp53j6nt_47e8f4
+const IS_MOBILE = typeof window !== 'undefined' && window.innerWidth <= 768
+
 const ROW: React.CSSProperties = {
   display: 'flex',
   alignItems: 'flex-start',
@@ -331,7 +336,7 @@ export default function CortexAmbientPage() {
       {/* ── H1: Organic solarpunk watermarks — fixed, no pointer events ──────── */}
       <div aria-hidden style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'hidden' }}>
         {/* Leaf-vein — top-left corner */}
-        <svg viewBox="0 0 180 180" width={180} height={180} style={{ position: 'absolute', top: 0, left: 0, opacity: 0.06, animation: 'organic-breathe 5.5s ease-in-out infinite' }}>
+        <svg viewBox="0 0 180 180" width={180} height={180} style={{ position: 'absolute', top: 0, left: 0, opacity: 0.06, animation: IS_MOBILE ? 'none' : 'organic-breathe 5.5s ease-in-out infinite' }}>
           <path d="M20,160 Q50,80 160,20" fill="none" stroke="#7a9a5a" strokeWidth="1.5"/>
           <path d="M20,160 Q60,100 120,30" fill="none" stroke="#7a9a5a" strokeWidth="1"/>
           <path d="M20,160 Q40,110 90,45" fill="none" stroke="#7a9a5a" strokeWidth="0.8"/>
@@ -342,7 +347,7 @@ export default function CortexAmbientPage() {
           <circle cx="20" cy="160" r="3.5" fill="#6b8e4e" opacity="0.6"/>
         </svg>
         {/* Solar corona — bottom-right corner */}
-        <svg viewBox="0 0 160 160" width={160} height={160} style={{ position: 'absolute', bottom: 0, right: 0, opacity: 0.065, animation: 'organic-breathe 6.5s ease-in-out infinite 1.2s' }}>
+        <svg viewBox="0 0 160 160" width={160} height={160} style={{ position: 'absolute', bottom: 0, right: 0, opacity: 0.065, animation: IS_MOBILE ? 'none' : 'organic-breathe 6.5s ease-in-out infinite 1.2s' }}>
           <circle cx="80" cy="80" r="22" fill="none" stroke="#f5c518" strokeWidth="1.2"/>
           <circle cx="80" cy="80" r="30" fill="none" stroke="#d4af37" strokeWidth="0.5" strokeDasharray="3 5"/>
           {[0,30,60,90,120,150,180,210,240,270,300,330].map((deg, i) => {
@@ -354,7 +359,7 @@ export default function CortexAmbientPage() {
           })}
         </svg>
         {/* Wave — left rail bottom */}
-        <svg viewBox="0 0 220 60" width={220} height={60} style={{ position: 'absolute', bottom: 80, left: 0, opacity: 0.055, animation: 'organic-breathe 7s ease-in-out infinite 0.4s' }}>
+        <svg viewBox="0 0 220 60" width={220} height={60} style={{ position: 'absolute', bottom: 80, left: 0, opacity: 0.055, animation: IS_MOBILE ? 'none' : 'organic-breathe 7s ease-in-out infinite 0.4s' }}>
           <path d="M0,30 C18,10 38,50 55,30 C72,10 92,50 110,30 C128,10 148,50 165,30 C182,10 202,50 220,30" fill="none" stroke="#7a9a5a" strokeWidth="1.2"/>
           <path d="M0,40 C18,22 38,58 55,40 C72,22 92,58 110,40 C128,22 148,58 165,40 C182,22 202,58 220,40" fill="none" stroke="#6b8e4e" strokeWidth="0.7"/>
         </svg>

@@ -11,6 +11,10 @@
 import { useEffect, useState } from 'react'
 import { AMBIENT_PALETTE } from './palette'
 
+// Mobile detect — gate inline backdropFilter on small screens.
+// fork_mp53j6nt_47e8f4 — phone GPU heating fix.
+const IS_MOBILE = typeof window !== 'undefined' && window.innerWidth <= 768
+
 interface PresenceHeaderProps {
   audioEnabled: boolean
   onToggleAudio: () => void
@@ -76,12 +80,12 @@ export function PresenceHeader({
 
   return (
     <header
-      className="ambient-presence-header sticky top-0 z-40"
+      className="ambient-presence-header presence-header-glass sticky top-0 z-40"
       style={{
-        background: 'rgba(6,7,10,0.92)',
+        background: IS_MOBILE ? 'rgba(10,10,10,0.96)' : 'rgba(6,7,10,0.92)',
         borderBottom: '1px solid rgba(212,175,55,0.08)',
-        backdropFilter: 'blur(12px) saturate(1.1)',
-        WebkitBackdropFilter: 'blur(12px) saturate(1.1)',
+        backdropFilter: IS_MOBILE ? 'none' : 'blur(12px) saturate(1.1)',
+        WebkitBackdropFilter: IS_MOBILE ? 'none' : 'blur(12px) saturate(1.1)',
       }}
     >
       <div

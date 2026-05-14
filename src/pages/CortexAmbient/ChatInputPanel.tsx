@@ -101,6 +101,12 @@ const PLACEHOLDERS = [
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Mobile detect — keep it cheap, evaluated at module load. The CSS media
+// query in index.css handles class-based overrides; this constant gates
+// inline-style backdropFilter + transition values (inline styles win
+// over CSS, so we have to gate them in JS). fork_mp53j6nt_47e8f4
+const IS_MOBILE = typeof window !== 'undefined' && window.innerWidth <= 768
+
 export function ChatInputPanel() {
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
@@ -259,16 +265,18 @@ export function ChatInputPanel() {
           onSubmit={onSubmit}
           style={{ position: 'relative' }}
         >
-          <div className="relative overflow-hidden"
+          <div className="relative overflow-hidden chat-input-glass"
             style={{
-              background: 'linear-gradient(180deg, rgba(15,18,24,0.55) 0%, rgba(8,10,14,0.78) 100%)',
+              background: IS_MOBILE
+                ? 'rgba(0,0,0,0.92)'
+                : 'linear-gradient(180deg, rgba(15,18,24,0.55) 0%, rgba(8,10,14,0.78) 100%)',
               boxShadow: isStreaming
                 ? '0 0 32px rgba(255,178,122,0.18), inset 0 0 18px rgba(255,178,122,0.08)'
                 : isRecording
                   ? '0 0 32px rgba(239,68,68,0.14), inset 0 0 18px rgba(239,68,68,0.06)'
                   : '0 0 28px rgba(255,178,122,0.06), inset 0 0 14px rgba(255,178,122,0.04)',
-              backdropFilter: 'blur(18px) saturate(1.2)',
-              WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
+              backdropFilter: IS_MOBILE ? 'none' : 'blur(18px) saturate(1.2)',
+              WebkitBackdropFilter: IS_MOBILE ? 'none' : 'blur(18px) saturate(1.2)',
               transition: 'box-shadow 320ms ease-out',
             }}
           >
@@ -374,10 +382,12 @@ function RecordingBanner({ state, elapsed, lastTranscript, audioLevel, error, on
         padding: '6px 12px 6px 10px',
         marginBottom: 4,
         borderRadius: 6,
-        background: 'linear-gradient(90deg, rgba(239,68,68,0.10) 0%, rgba(10,12,18,0.80) 100%)',
+        background: IS_MOBILE
+          ? 'rgba(20,8,10,0.95)'
+          : 'linear-gradient(90deg, rgba(239,68,68,0.10) 0%, rgba(10,12,18,0.80) 100%)',
         border: '1px solid rgba(239,68,68,0.22)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        backdropFilter: IS_MOBILE ? 'none' : 'blur(12px)',
+        WebkitBackdropFilter: IS_MOBILE ? 'none' : 'blur(12px)',
         overflow: 'hidden',
       }}
       role="status"
@@ -393,7 +403,9 @@ function RecordingBanner({ state, elapsed, lastTranscript, audioLevel, error, on
           background: '#ef4444',
           boxShadow: '0 0 6px rgba(239,68,68,0.8)',
           flexShrink: 0,
-          animation: state === 'recording' ? 'ambient-pulse 1.4s ease-in-out infinite' : 'none',
+          animation: IS_MOBILE
+            ? 'none'
+            : state === 'recording' ? 'ambient-pulse 1.4s ease-in-out infinite' : 'none',
           opacity: state === 'stopping' ? 0.45 : 1,
         }}
       />
@@ -475,7 +487,7 @@ function RecordingBanner({ state, elapsed, lastTranscript, audioLevel, error, on
             justifyContent: 'center',
             flexShrink: 0,
             cursor: 'pointer',
-            transition: 'all 160ms ease-out',
+            transition: 'background-color 160ms ease-out, border-color 160ms ease-out, opacity 160ms ease-out',
           }}
         >
           <svg viewBox="0 0 10 10" width="8" height="8" fill="currentColor">
@@ -542,9 +554,9 @@ function MicButton({ state, onStart, onStop, disabled }: MicButtonProps) {
         justifyContent: 'center',
         flexShrink: 0,
         cursor: disabled || isStopping ? 'default' : 'pointer',
-        transition: 'all 200ms ease-out',
+        transition: 'background-color 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out, opacity 200ms ease-out',
         boxShadow: isActive ? '0 0 10px rgba(239,68,68,0.20)' : 'none',
-        animation: isRecording ? 'mic-glow 2s ease-in-out infinite' : 'none',
+        animation: IS_MOBILE ? 'none' : (isRecording ? 'mic-glow 2s ease-in-out infinite' : 'none'),
         opacity: isStopping ? 0.50 : 1,
       }}
     >
@@ -594,7 +606,7 @@ function RecordingRibbon({ active }: { active: boolean }) {
           height: '1px',
           width: '40%',
           background: 'linear-gradient(90deg, rgba(239,68,68,0) 0%, rgba(239,68,68,0.90) 50%, rgba(239,68,68,0) 100%)',
-          animation: 'ambient-ribbon 2.0s linear infinite',
+          animation: IS_MOBILE ? 'none' : 'ambient-ribbon 2.0s linear infinite',
           boxShadow: '0 0 6px rgba(239,68,68,0.65)',
         }}
       />
@@ -625,7 +637,7 @@ function StopButton({ aborting, onAbort }: { aborting: boolean; onAbort: () => v
         justifyContent: 'center',
         flexShrink: 0,
         cursor: aborting ? 'default' : 'pointer',
-        transition: 'all 200ms ease-out',
+        transition: 'background-color 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out, opacity 200ms ease-out',
         boxShadow: '0 0 10px rgba(248,113,113,0.18)',
       }}
     >
@@ -658,7 +670,7 @@ function SubmitButton({ sending, canSubmit }: { sending: boolean; canSubmit: boo
           ? 'radial-gradient(circle at 50% 40%, rgba(255,178,122,0.42) 0%, rgba(255,178,122,0.04) 70%)'
           : 'transparent',
         color: canSubmit ? '#ffb27a' : 'rgba(255,255,255,0.18)',
-        transition: 'all 200ms ease-out',
+        transition: 'background-color 200ms ease-out, border-color 200ms ease-out, color 200ms ease-out, box-shadow 200ms ease-out',
         cursor: canSubmit ? 'pointer' : 'default',
         boxShadow: canSubmit ? '0 0 10px rgba(255,178,122,0.22)' : 'none',
       }}
@@ -703,7 +715,7 @@ function StreamingRibbon({ active }: { active: boolean }) {
           height: '1px',
           width: '40%',
           background: 'linear-gradient(90deg, rgba(255,178,122,0) 0%, rgba(255,178,122,0.95) 50%, rgba(255,178,122,0) 100%)',
-          animation: 'ambient-ribbon 2.4s linear infinite',
+          animation: IS_MOBILE ? 'none' : 'ambient-ribbon 2.4s linear infinite',
           boxShadow: '0 0 6px rgba(255,178,122,0.7)',
         }}
       />
@@ -728,7 +740,7 @@ function AttachButton({ onClick, disabled }: { onClick: () => void; disabled: bo
         background: 'transparent',
         color: disabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,178,122,0.85)',
         cursor: disabled ? 'default' : 'pointer',
-        transition: 'all 180ms ease-out',
+        transition: 'background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out, opacity 180ms ease-out',
       }}
     >
       <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"

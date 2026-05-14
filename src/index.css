@@ -446,3 +446,101 @@
     transition: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE GPU OPTIMISATIONS — fork_mp53j6nt_47e8f4
+   Phone heating + lag fix. All inside max-width:768px so desktop is
+   untouched. Kills always-on backdrop-filter, infinite ambient
+   animations, will-change layers, and transition:all on mobile only.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Class-targeted overrides (used where we can add classNames) */
+  .chat-input-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(0, 0, 0, 0.92) !important;
+  }
+
+  .presence-header-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(10, 10, 10, 0.96) !important;
+  }
+
+  /* Kill all backdrop-blur Tailwind utilities on mobile */
+  [class*="backdrop-blur"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Kill GPU-expensive infinite ambient animations on mobile.
+     Class-based animations are stopped here; inline-style animations
+     are stopped via the isMobile gate in component code. */
+  .organic-breathe,
+  [class*="organic-breathe"],
+  .ambient-breath,
+  .ambient-fork-pulse,
+  .amber-pulse,
+  .all-clear-pulse,
+  .value-flash,
+  .solar-disc-pulse,
+  .panel-pulse,
+  .holo-rotate,
+  .horizon-crt-scan,
+  .pulse-dot {
+    animation: none !important;
+  }
+
+  /* The holo-border conic-gradient sweep is GPU-expensive on mobile */
+  .holo-border::before {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  /* Simplify shadow stacks on mobile — multi-layer blurs are GPU heavy */
+  [class*="shadow-2xl"],
+  [class*="shadow-xl"] {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+  }
+
+  /* Replace transition:all with specific cheap properties. Nuclear, but
+     intentional and mobile-scoped. Note: inline transition styles win
+     over CSS, so the matching inline replacements live in components. */
+  * {
+    transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease !important;
+  }
+
+  /* Disable will-change on mobile (wastes GPU memory on layer creation) */
+  [style*="will-change"],
+  [class*="will-change"],
+  .ambient-particle {
+    will-change: auto !important;
+  }
+
+  /* Float-particle animation is per-particle GPU work; kill on mobile */
+  .ambient-particle {
+    animation: none !important;
+  }
+
+  /* Inline-style animation kill switch — matches elements whose inline
+     style includes any of the GPU-heavy animation names below. Inline
+     style wins over CSS class rules normally, but attribute selectors
+     bound to !important do override. */
+  [style*="organic-breathe"],
+  [style*="pulse-dot"],
+  [style*="amber-pulse"],
+  [style*="all-clear-pulse"],
+  [style*="solar-disc-pulse"],
+  [style*="ambient-pulse"],
+  [style*="ambient-ribbon"],
+  [style*="ambient-fork-pulse"],
+  [style*="panel-pulse"],
+  [style*="mic-glow"],
+  [style*="value-flash"],
+  [style*="horizon-crt-scan"],
+  [style*="holo-rotate"],
+  [style*="ambient-breath"],
+  [style*="shimmer"] {
+    animation: none !important;
+  }
+}
