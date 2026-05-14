@@ -1,6 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { useAuthStore } from './store/authStore'
 import api from './api/client'
 import toast from 'react-hot-toast'
@@ -16,17 +15,9 @@ function SceneSuspense({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
       fallback={
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex h-[50vh] items-center justify-center"
-        >
-          <motion.div
-            animate={{ opacity: [0.15, 0.3, 0.15] }}
-            transition={{ repeat: Infinity, duration: 2.4, ease: 'easeInOut' }}
-            className="h-2 w-2 rounded-full bg-primary"
-          />
-        </motion.div>
+        <div className="animate-ecodia-fade-in flex h-[50vh] items-center justify-center">
+          <div className="animate-ecodia-pulse-dot h-2 w-2 rounded-full bg-primary" />
+        </div>
       }
     >
       {children}
@@ -64,11 +55,9 @@ function LoginOverlay() {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
-      <motion.form
+      <form
         onSubmit={handleSubmit}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 80, damping: 20 }}
+        className="animate-ecodia-rise-in"
         style={{
           width: '100%', maxWidth: 280,
           padding: '2rem',
@@ -107,7 +96,7 @@ function LoginOverlay() {
         >
           {loading ? '...' : 'Enter'}
         </button>
-      </motion.form>
+      </form>
     </div>
   )
 }
